@@ -20,4 +20,7 @@ Personal site for Andrew Mouchantaf. Astro, static output, no runtime dependenci
     src/layouts/Base.astro     page shell: grid surface, nav, drawing legend
     src/styles/global.css      tokens and page surfaces
 
-`public/favicon.ico` and `public/favicon.png` are generated from `Celestial_Stone.png`.
+## Deploy
+
+Pushing to `main` runs `.github/workflows/deploy.yml`, which builds the site and
+publishes `dist/` to GitHub Pages at https://andrewmouch.github.io/.
