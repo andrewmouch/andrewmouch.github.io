@@ -1,0 +1,37 @@
+---
+import Base from '../layouts/Base.astro';
+import IsoNameScene from '../components/IsoNameScene.astro';
+---
+<Base
+  title="Andrew Mouchantaf"
+  description="Mechatronics engineer — embedded systems, firmware, and the machines they run."
+  fullscreen grid="none" nav={false}
+  sheetTitle="Entry / Title Sheet" sheet="01/05" rev="C"
+>
+
+  <script is:inline>
+    (function () {
+      var skip = false;
+      try {
+        skip = !!localStorage.getItem('intro-seen');
+      } catch (e) {}
+
+      if (!skip && window.matchMedia) {
+        skip = matchMedia('(max-width: 760px)').matches
+          || matchMedia('(pointer: coarse)').matches
+          || matchMedia('(prefers-reduced-motion: reduce)').matches;
+      }
+      if (skip) { location.replace('/home'); return; }
+
+      try { localStorage.setItem('intro-seen', '1'); } catch (e) {}
+    })();
+  </script>
+
+  <div class="stage">
+    <IsoNameScene name="ANDREW M" />
+  </div>
+</Base>
+
+<style>
+  .stage { position: relative; height: 100svh; min-height: 520px; overflow: hidden; }
+</style>

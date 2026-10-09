@@ -1,0 +1,479 @@
+---
+---
+<header class="hero">
+  <canvas id="robot" aria-hidden="true"></canvas>
+  <div class="hero-text">
+    <h1>Andrew Mouchantaf</h1>
+
+    <p class="lede">I’m a mechatronics engineer trying to bridge between artistic expression and good engineering. Take a look at some of <a href="/projects">my projects</a>.</p>
+  </div>
+  <div class="hint" id="hint">Drive it with <b>W A S D</b> — <b>space</b> to hop.</div>
+</header>
+
+<style>
+  .hero { position: relative; height: calc(100svh - var(--nav-h)); min-height: 520px; overflow: hidden; }
+  #robot { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+
+  .hero-text { position: relative; z-index: 1; width: 100%; max-width: var(--content);
+               margin: 0 auto; padding: clamp(2rem, 6vh, 5rem) var(--gutter); pointer-events: none; }
+  h1 { font-family: var(--font-serif); font-size: clamp(2.5rem, 6.5vw, 4.5rem); line-height: 1.02;
+       font-weight: 600; letter-spacing: -.02em; margin: 0 0 1.1rem; max-width: 20ch; }
+  .lede { font-size: 1.05rem; font-weight: 300; margin: 0; color: var(--muted); max-width: none; }
+
+  @media (min-width: 64rem) {
+    .lede { white-space: nowrap; font-size: .92rem; }
+  }
+
+  .lede a { pointer-events: auto; color: var(--ink); text-decoration-color: var(--trace);
+            text-decoration-thickness: 2px; text-underline-offset: .25em;
+            transition: color .15s, text-decoration-color .15s; }
+  .lede a:hover { color: var(--accent); text-decoration-color: var(--accent); }
+  .hint { position: absolute; left: 50%; transform: translateX(-50%); bottom: 1.5rem; z-index: 1;
+          width: 100%; max-width: var(--content); padding: 0 var(--gutter);
+          font-size: .9rem; color: var(--muted); transition: opacity .4s; }
+</style>
+
+<script>
+  const cv = document.getElementById('robot') as HTMLCanvasElement;
+  const ctx = cv.getContext('2d')!;
+  const hint = document.getElementById('hint')!;
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const css = (n: string) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+
+  const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+
+  const hex = (h: string): number[] | null => {
+    if (!h) return null;
+    if (h.startsWith('rgb')) {
+      const m = h.match(/[\d.]+/g);
+      return m && m.length >= 3 ? m.slice(0, 3).map(Number) : null;
+    }
+    const t = h.replace('#', '');
+    const n = t.length === 3 ? t.split('').map((c) => c + c).join('') : t;
+    if (n.length < 6) return null;
+    const out = [parseInt(n.slice(0, 2), 16), parseInt(n.slice(2, 4), 16), parseInt(n.slice(4, 6), 16)];
+    return out.some(Number.isNaN) ? null : out;
+  };
+  const shade = (h: string, t: number) => {
+    const c = hex(h);
+    if (!c) return h;
+    const to = t > 0 ? 255 : 0, k = Math.abs(t);
+    return `rgb(${c.map((v) => Math.round(v + (to - v) * k)).join(',')})`;
+  };
+
+  const mix = (a: string, b: string, t: number) => {
+    const ca = hex(a), cb = hex(b);
+    if (!ca || !cb) return a;
+    return `rgb(${ca.map((v, i) => Math.round(v + (cb[i] - v) * t)).join(',')})`;
+  };
+  const tracePts = (pts: { x: number; y: number }[]) => {
+    ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath();
+  };
+
+  const IX = 1, IY = 0.5;
+
+  let W = 0, H = 0, dpr = 1;
+  let s = 40, R = 200, ox = 0, oy = 0;
+  let visible = true, engaged = false, happy = false;
+  let look = 0;
+
+  const keys = new Set<string>();
+  const held = (k: string) => keys.has(k);
+  const coarse = matchMedia('(pointer: coarse)').matches;
+  let tapTo: { wx: number; wy: number } | null = null;
+  let last = 0, nextBlink = 2500, blinkUntil = 0;
+
+  let px = 0, py = 0, th = 0.6, v = 0, om = 0;
+  let treadL = 0, treadR = 0, z = 0, vz = 0;
+
+  const IDLE_SPIN = 0.024;
+  let carried = 0;
+  try {
+    const stored = sessionStorage.getItem('iso-exit-spin');
+    if (stored) { carried = parseFloat(stored) || 0; sessionStorage.removeItem('iso-exit-spin'); }
+  } catch {}
+  let spin = carried > 0 ? carried : IDLE_SPIN;
+
+  let rising = carried > 0, arriveAt = 0, portalFrom = 0;
+  let portalWX = 0, portalWY = 0;
+  const RISE_MS = 1150, PORTAL_FADE_MS = 850;
+  const PORTAL_PINK = '#ff4d9d';
+  const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+
+  const dust: { x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number }[] = [];
+
+  function proj(wx: number, wy: number, h = 0) {
+    return { x: ox + (wx - wy) * IX, y: oy + (wx + wy) * IY - h };
+  }
+  function unproj(sx: number, sy: number) {
+    const dx = (sx - ox) / IX, dy = (sy - oy) / IY;
+    return { wx: (dx + dy) / 2, wy: (dy - dx) / 2 };
+  }
+
+  function resize() {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    W = cv.clientWidth; H = cv.clientHeight;
+    cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    R = Math.min(W / 5.2, H / 3.4);
+    ox = W * 0.5; oy = H * 0.63;
+    s = clamp(R * 0.38, 28, 82);
+    px = clamp(px, -R * 0.9, R * 0.9); py = clamp(py, -R * 0.9, R * 0.9);
+    if (still) draw(0);
+  }
+
+  const dims = () => ({
+    tl: s * 1.5, tw: s * 0.34, tsep: s * 0.39, thh: s * 0.24,
+    bl: s * 1.12, bw: s * 0.86, bh: s * 0.62,
+  });
+
+  function l2w(along: number, lat: number) {
+    const ct = Math.cos(th), st = Math.sin(th);
+    return { wx: px + along * ct - lat * st, wy: py + along * st + lat * ct };
+  }
+
+  function update(now: number, dt: number) {
+    const d = dims();
+
+    if (rising) {
+      if (!arriveAt) { arriveAt = now; portalWX = px; portalWY = py; }
+      const t = clamp((now - arriveAt) / RISE_MS, 0, 1);
+      z = -(d.thh + d.bh + s * 1.1) * (1 - easeOut(t));
+      th += spin * dt;
+      spin *= Math.pow(0.974, dt);
+      treadL += spin * d.tsep * dt; treadR -= spin * d.tsep * dt;
+      v = 0; om = 0;
+      if (t >= 1) { rising = false; z = 0; vz = 0; portalFrom = now; }
+      return;
+    }
+
+    if (!engaged) {
+      spin += (IDLE_SPIN - spin) * 0.03 * dt;
+      th += spin * dt;
+      treadL += spin * d.tsep * dt; treadR -= spin * d.tsep * dt;
+      v *= Math.pow(0.9, dt);
+      om = 0;
+      happy = true;
+      vz -= 0.28 * dt; z = Math.max(0, z + vz * dt); if (z === 0) vz = 0;
+      if (now > nextBlink) { blinkUntil = now + 130; nextBlink = now + 2600 + Math.random() * 3000; }
+      return;
+    }
+
+    if (spin > 0.002) {
+      spin *= Math.pow(0.86, dt);
+      th += spin * dt;
+      treadL += spin * d.tsep * dt; treadR -= spin * d.tsep * dt;
+    } else spin = 0;
+
+    const MAXV = s * 0.085, MAXOM = 0.075;
+    let fwd = 0, turn = 0;
+
+    if (tapTo) {
+      const dx = tapTo.wx - px, dy = tapTo.wy - py, dist = Math.hypot(dx, dy);
+      const stop = s * 1.5;
+      if (dist < stop) tapTo = null;
+      const err = wrap(Math.atan2(dy, dx) - th);
+      om += (clamp(err * 2.4, -MAXOM, MAXOM) - om) * 0.18 * dt;
+      v += ((dist > stop ? MAXV * Math.max(0, Math.cos(err)) : 0) - v) * 0.1 * dt;
+      turn = clamp(err, -1, 1);
+    } else {
+      fwd = (held('w') ? 1 : 0) - (held('s') ? 1 : 0);
+      turn = (held('d') ? 1 : 0) - (held('a') ? 1 : 0);
+      v += (MAXV * fwd - v) * 0.12 * dt;
+      om += (MAXOM * turn - om) * 0.2 * dt;
+    }
+
+    happy = z > 0 || (fwd === 0 && turn === 0 && Math.abs(v) < MAXV * 0.08);
+    look += (turn - look) * 0.12 * dt;
+
+    th += om * dt;
+    px += Math.cos(th) * v * dt; py += Math.sin(th) * v * dt;
+    px = clamp(px, -R * 0.9, R * 0.9); py = clamp(py, -R * 0.9, R * 0.9);
+
+    treadL += (v + om * d.tsep) * dt;
+    treadR += (v - om * d.tsep) * dt;
+
+    vz -= 0.28 * dt; z += vz * dt;
+    if (z < 0) { z = 0; vz = 0; }
+
+    if (now > nextBlink) { blinkUntil = now + 130; nextBlink = now + 2500 + Math.random() * 3000; }
+
+    if (v > s * 0.03 && Math.random() < 0.4) {
+      const r = l2w(-d.tl * 0.5, (Math.random() - 0.5) * d.tsep * 2);
+      dust.push({ x: r.wx, y: r.wy, z: 0, vx: -Math.cos(th) * v * 0.2, vy: -Math.sin(th) * v * 0.2, vz: Math.random() * 0.5, life: 1 });
+    }
+    for (let i = dust.length - 1; i >= 0; i--) {
+      const p = dust[i];
+      p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.vz -= 0.02 * dt;
+      if (p.z < 0) p.z = 0;
+      p.life -= 0.024 * dt;
+      if (p.life <= 0) dust.splice(i, 1);
+    }
+  }
+
+  function poly(pts: { x: number; y: number }[], fill: string, alpha = 1) {
+    ctx.globalAlpha = alpha; ctx.fillStyle = fill;
+    ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
+  }
+
+  function box(a0: number, a1: number, l0: number, l1: number, z0: number, z1: number, ink: string) {
+    const corners = [[a0, l0], [a1, l0], [a1, l1], [a0, l1]].map(([a, l]) => l2w(a, l));
+    const bot = corners.map((w) => proj(w.wx, w.wy, z0));
+    const top = corners.map((w) => proj(w.wx, w.wy, z1));
+    for (let i = 0; i < 4; i++) {
+      const j = (i + 1) % 4;
+      poly([bot[i], bot[j], top[j], top[i]], ink, i % 2 ? 0.9 : 0.76);
+    }
+    poly(top, ink, 1);
+    return top;
+  }
+
+  function draw(now: number) {
+    ctx.clearRect(0, 0, W, H);
+    const ink = css('--ink'), paper = css('--paper'), accent = css('--accent'), trace = css('--trace');
+    const d = dims();
+
+    const bg = css('--bg');
+    const rim = [proj(-R, -R), proj(R, -R), proj(R, R), proj(-R, R)];
+    const topY = Math.min(...rim.map((p) => p.y)), botY = Math.max(...rim.map((p) => p.y));
+    const leftX = Math.min(...rim.map((p) => p.x)), rightX = Math.max(...rim.map((p) => p.x));
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.22)'; ctx.shadowBlur = 28; ctx.shadowOffsetY = 12;
+
+    const GLASS = '#3aa6e0';
+    const body = ctx.createLinearGradient(0, topY, 0, botY);
+    body.addColorStop(0, shade(mix(bg, GLASS, 0.26), 0.12));
+    body.addColorStop(0.55, mix(bg, GLASS, 0.4));
+    body.addColorStop(1, shade(mix(bg, GLASS, 0.56), -0.05));
+    tracePts(rim); ctx.fillStyle = body; ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    tracePts(rim); ctx.clip();
+
+    const sheen = ctx.createLinearGradient(leftX, topY, rightX, botY);
+    sheen.addColorStop(0.00, 'rgba(255,255,255,0)');
+    sheen.addColorStop(0.38, 'rgba(255,255,255,0.07)');
+    sheen.addColorStop(0.50, 'rgba(255,255,255,0.2)');
+    sheen.addColorStop(0.62, 'rgba(255,255,255,0.07)');
+    sheen.addColorStop(1.00, 'rgba(255,255,255,0)');
+    ctx.fillStyle = sheen; ctx.fillRect(0, 0, W, H);
+
+    ctx.strokeStyle = css('--line') || ink; ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.3;
+    const cells = 8;
+    for (let i = 0; i <= cells; i++) {
+      const t = -R + (2 * R * i) / cells;
+      let a = proj(t, -R), b = proj(t, R);
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      a = proj(-R, t); b = proj(R, t);
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = shade(mix(bg, '#3aa6e0', 0.45), 0.55); ctx.globalAlpha = 0.95;
+    ctx.beginPath();
+    ctx.moveTo(rim[1].x, rim[1].y); ctx.lineTo(rim[2].x, rim[2].y); ctx.lineTo(rim[3].x, rim[3].y);
+    ctx.stroke();
+    ctx.strokeStyle = css('--line') || ink; ctx.globalAlpha = 0.55;
+    ctx.beginPath();
+    ctx.moveTo(rim[3].x, rim[3].y); ctx.lineTo(rim[0].x, rim[0].y); ctx.lineTo(rim[1].x, rim[1].y);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    for (const p of dust) {
+      const q = proj(p.x, p.y, p.z);
+      ctx.globalAlpha = p.life * 0.2; ctx.fillStyle = ink;
+      ctx.beginPath(); ctx.arc(q.x, q.y, s * 0.07 * (1.5 - p.life), 0, 7); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    const portalA = rising ? 1
+      : portalFrom ? clamp(1 - (now - portalFrom) / PORTAL_FADE_MS, 0, 1) : 0;
+    const portalR = s * 1.7;
+    const groundCircle = (r: number, h = 0, n = 48) => {
+      const pts = [];
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        pts.push(proj(portalWX + Math.cos(a) * r, portalWY + Math.sin(a) * r, h));
+      }
+      return pts;
+    };
+    if (portalA > 0) {
+      poly(groundCircle(portalR), PORTAL_PINK, 0.22 * portalA);
+      ctx.strokeStyle = PORTAL_PINK; ctx.globalAlpha = portalA; ctx.lineWidth = 2;
+      tracePts(groundCircle(portalR)); ctx.stroke();
+
+      for (let k = 0; k < 2; k++) {
+        const t = (((now % 1800) / 1800) + k * 0.5) % 1;
+        ctx.strokeStyle = PORTAL_PINK; ctx.globalAlpha = (1 - t) * 0.5 * portalA;
+        tracePts(groundCircle(portalR * (0.85 + t * 0.65), t * portalR * 2.6)); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    const lift = clamp(z / (s * 1.2), 0, 1);
+    const sh = [[-d.tl / 2, -d.tsep - d.tw / 2], [d.tl / 2, -d.tsep - d.tw / 2],
+                [d.tl / 2, d.tsep + d.tw / 2], [-d.tl / 2, d.tsep + d.tw / 2]]
+      .map(([a, l]) => l2w(a * (1 - lift * 0.25), l * (1 - lift * 0.25)))
+      .map((w) => proj(w.wx, w.wy, 0));
+
+    if (z >= 0) poly(sh, ink, 0.16 * (1 - lift * 0.55));
+
+    function trackSeg(side: number, a0: number, a1: number) {
+      const l0 = side * d.tsep - d.tw / 2, l1 = side * d.tsep + d.tw / 2;
+      box(a0, a1, l0, l1, z, z + d.thh, ink);
+
+      const phase = side < 0 ? treadR : treadL;
+      const gap = s * 0.2;
+      ctx.strokeStyle = paper; ctx.lineWidth = Math.max(1.2, s * 0.05); ctx.lineCap = 'butt';
+      ctx.globalAlpha = 0.85;
+      const first = -d.tl / 2 + (((phase % gap) + gap) % gap);
+      for (let a = first; a <= d.tl / 2; a += gap) {
+        if (a < a0 || a >= a1) continue;
+        const p1 = l2w(a, l0 + d.tw * 0.14), p2 = l2w(a, l1 - d.tw * 0.14);
+        const q1 = proj(p1.wx, p1.wy, z + d.thh), q2 = proj(p2.wx, p2.wy, z + d.thh);
+        ctx.beginPath(); ctx.moveTo(q1.x, q1.y); ctx.lineTo(q2.x, q2.y); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+
+      ctx.fillStyle = accent;
+      for (const end of [-1, 1]) {
+        const ea = end * d.tl * 0.42;
+        if (ea < a0 || ea >= a1) continue;
+        const c = l2w(ea, side * d.tsep);
+        const q = proj(c.wx, c.wy, z + d.thh);
+        ctx.beginPath(); ctx.arc(q.x, q.y, s * 0.07, 0, 7); ctx.fill();
+      }
+    }
+
+    const submerged = z < 0 && portalA > 0;
+    if (submerged) {
+      const mouth = groundCircle(portalR);
+      const topY = Math.min(...mouth.map((c) => c.y));
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, W, topY);
+      ctx.moveTo(mouth[0].x, mouth[0].y);
+      for (let i = 1; i < mouth.length; i++) ctx.lineTo(mouth[i].x, mouth[i].y);
+      ctx.closePath();
+      ctx.clip();
+    }
+
+    const bz = z + d.thh;
+    const SEG = 8;
+    const pieces: { depth: number; run: () => void }[] = [];
+    for (const side of [-1, 1]) {
+      for (let k = 0; k < SEG; k++) {
+        const a0 = -d.tl / 2 + (k * d.tl) / SEG, a1 = -d.tl / 2 + ((k + 1) * d.tl) / SEG;
+        const c = l2w((a0 + a1) / 2, side * d.tsep);
+        pieces.push({ depth: c.wx + c.wy, run: () => trackSeg(side, a0, a1) });
+      }
+    }
+    const bc = l2w(0, 0);
+
+    pieces.push({
+      depth: bc.wx + bc.wy + 1e-4,
+      run: () => box(-d.bl / 2, d.bl / 2, -d.bw / 2, d.bw / 2, bz, bz + d.bh, ink),
+    });
+    pieces.sort((a, b) => a.depth - b.depth);
+    for (const p of pieces) p.run();
+
+    const lag = -om * s * 6;
+    const base = l2w(-d.bl * 0.3, 0), tip = l2w(-d.bl * 0.3 + lag, lag * 0.4);
+    const b1 = proj(base.wx, base.wy, bz + d.bh), b2 = proj(tip.wx, tip.wy, bz + d.bh + s * 0.55);
+    ctx.strokeStyle = ink; ctx.lineWidth = s * 0.06; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(b1.x, b1.y); ctx.quadraticCurveTo(b1.x, b2.y, b2.x, b2.y); ctx.stroke();
+    ctx.fillStyle = accent;
+    ctx.beginPath(); ctx.arc(b2.x, b2.y, s * (0.09 + (still ? 0 : Math.sin(now * 0.006) * 0.015)), 0, 7); ctx.fill();
+
+    const ct = Math.cos(th), st = Math.sin(th);
+    const frontVisible = ct + st > 0;
+    const fc = l2w(d.bl / 2, 0);
+    const fo = proj(fc.wx, fc.wy, bz + d.bh * 0.5);
+
+    const ux = (-st - ct) * IX, uy = (-st + ct) * IY;
+
+    ctx.save();
+    ctx.transform(ux, uy, 0, -1, fo.x, fo.y);
+
+    if (frontVisible) {
+      ctx.fillStyle = paper;
+      ctx.beginPath(); ctx.roundRect(-d.bw * 0.34, -d.bh * 0.26, d.bw * 0.68, d.bh * 0.52, s * 0.12); ctx.fill();
+
+      const ex = clamp(look, -1, 1) * s * 0.06, ey = 0;
+      const blink = now < blinkUntil ? 0.12 : 1;
+      ctx.fillStyle = accent; ctx.strokeStyle = accent; ctx.lineWidth = s * 0.07;
+      for (const side of [-1, 1]) {
+        const x = side * d.bw * 0.16 + ex;
+        if (happy) { ctx.beginPath(); ctx.arc(x, -ey, s * 0.08, Math.PI * 0.1, Math.PI * 0.9); ctx.stroke(); }
+        else { ctx.beginPath(); ctx.ellipse(x, -ey, s * 0.07, s * 0.095 * blink, 0, 0, 7); ctx.fill(); }
+      }
+    } else {
+      ctx.strokeStyle = trace; ctx.lineWidth = s * 0.045; ctx.globalAlpha = 0.75;
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath(); ctx.moveTo(-d.bw * 0.22, i * s * 0.12); ctx.lineTo(d.bw * 0.22, i * s * 0.12); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+
+    if (submerged) ctx.restore();
+  }
+
+  function frame(now: number) {
+    requestAnimationFrame(frame);
+    if (!visible || still) return;
+    const dt = Math.min((now - (last || now)) / 16.67, 2); last = now;
+    update(now, dt); draw(now);
+  }
+
+  const KEYMAP: Record<string, string> = {
+    w: 'w', arrowup: 'w', s: 's', arrowdown: 's',
+    a: 'a', arrowleft: 'a', d: 'd', arrowright: 'd',
+  };
+  addEventListener('keydown', (e) => {
+    const t = e.target as HTMLElement | null;
+    if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === ' ' || k === 'spacebar') {
+      e.preventDefault();
+      if (z === 0) vz = s * 0.13;
+      if (!engaged) { engaged = true; hint.style.opacity = '0'; }
+      return;
+    }
+    const m = KEYMAP[k];
+    if (!m) return;
+    e.preventDefault();
+    keys.add(m);
+    tapTo = null;
+    if (!engaged) { engaged = true; hint.style.opacity = '0'; }
+  });
+  addEventListener('keyup', (e) => {
+    const m = KEYMAP[e.key.toLowerCase()];
+    if (m) keys.delete(m);
+  });
+
+  addEventListener('blur', () => keys.clear());
+
+  cv.addEventListener('pointerdown', (e) => {
+    if (z === 0) vz = s * 0.13;
+    if (!engaged) { engaged = true; hint.style.opacity = '0'; }
+    if (!coarse) return;
+    const r = cv.getBoundingClientRect();
+    const g = unproj(e.clientX - r.left, e.clientY - r.top);
+    tapTo = { wx: clamp(g.wx, -R * 0.9, R * 0.9), wy: clamp(g.wy, -R * 0.9, R * 0.9) };
+  });
+  new IntersectionObserver(([e]) => (visible = e.isIntersecting)).observe(cv);
+  addEventListener('resize', resize);
+  resize(); requestAnimationFrame(frame);
+</script>

@@ -1,0 +1,27 @@
+---
+import Base from '../layouts/Base.astro';
+
+const EMAIL = 'andrewmouchantaf@gmail.com';
+---
+<Base
+  title="Contact — Andrew Mouchantaf"
+  description="Get in touch about mechatronics, embedded systems, and firmware work."
+  sheetTitle="Contact / Details" sheet="05/05" rev="C"
+>
+  <main>
+    <h1>Get in touch</h1>
+    <p class="email"><a href={`mailto:${EMAIL}`}>{EMAIL}</a></p>
+  </main>
+</Base>
+
+<style>
+  h1 { font-size: clamp(2rem, 5vw, 3rem); line-height: 1.1; margin: 0 0 1.25rem; }
+
+  .email { margin: 0; font-family: var(--font-mono); font-size: 1.05rem; }
+  .email a {
+    text-decoration-color: var(--trace); text-decoration-thickness: 2px;
+    text-underline-offset: .3em;
+    transition: color .15s, text-decoration-color .15s;
+  }
+  .email a:hover { color: var(--accent); text-decoration-color: var(--accent); }
+</style>

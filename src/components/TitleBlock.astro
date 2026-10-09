@@ -1,0 +1,62 @@
+---
+interface Props { title?: string; sheet?: string; rev?: string; scale?: string; fixed?: boolean }
+const {
+  title = 'Index / Landing',
+  sheet = '01/04',
+  rev = 'C',
+  scale = '1:1',
+
+  fixed = false,
+} = Astro.props;
+
+const built = new Date().toISOString().slice(0, 10);
+---
+<div class={`block${fixed ? ' fixed' : ''}`} aria-hidden="true">
+  <div class="row name">
+    <span class="k">Drawn by</span>
+    <span class="v">A. Mouchantaf</span>
+  </div>
+  <div class="row">
+    <span class="k">Title</span>
+    <span class="v">{title}</span>
+  </div>
+  <div class="grid3">
+    <div><span class="k">Scale</span><span class="v">{scale}</span></div>
+    <div><span class="k">Rev</span><span class="v">{rev}</span></div>
+    <div><span class="k">Sheet</span><span class="v">{sheet}</span></div>
+  </div>
+  <div class="row">
+    <span class="k">Date</span>
+    <span class="v" data-today>{built}</span>
+  </div>
+</div>
+
+<style>
+  .block {
+    position: absolute; z-index: 4; pointer-events: none;
+    right: clamp(.75rem, 2vw, 1.5rem); bottom: clamp(.75rem, 2vw, 1.5rem);
+    width: min(20rem, 42vw);
+    border-left: 1px solid var(--line); border-top: 1px solid var(--line);
+    background: color-mix(in srgb, var(--paper) 55%, transparent);
+    backdrop-filter: blur(4px);
+    font-family: var(--font-mono); font-size: .64rem; letter-spacing: .08em;
+  }
+  .row, .grid3 > div { display: flex; align-items: baseline; gap: .6rem; padding: .35rem .7rem;
+                       white-space: nowrap; }
+  .row + .row, .grid3 { border-top: 1px solid var(--line); }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .grid3 > div + div { border-left: 1px solid var(--line); }
+  .k { color: var(--muted); text-transform: uppercase; flex: none; }
+  .v { color: var(--ink); font-weight: 500; }
+  .name .v { font-size: .78rem; letter-spacing: .04em; }
+
+  .block.fixed { position: fixed; }
+  @media (max-width: 46rem) { .block { display: none; } }
+</style>
+
+<script>
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const today = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  document.querySelectorAll('[data-today]').forEach((el) => { el.textContent = today; });
+</script>
