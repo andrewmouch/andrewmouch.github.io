@@ -1,0 +1,87 @@
+:root {
+  color-scheme: light;
+
+  --bg: #efebe2;
+  --paper: #f8f6f1;
+  --ink: #221f1a;
+  --muted: #6d6458;
+  --accent: #1f5c7a;
+  --trace: #b4541f;
+  --line: rgba(34, 31, 26, .2);
+  --grid: rgba(34, 31, 26, .055);
+  --grid-fine: rgba(34, 31, 26, .03);
+
+  --font-serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --nav-h: 4.5rem;
+
+  --content: 64rem;
+  --gutter: clamp(1.5rem, 5vw, 4rem);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #15171a;
+    --paper: #1e2126;
+    --ink: #e9e5dc;
+    --muted: #978f82;
+    --accent: #6fb3cf;
+    --trace: #e08b4f;
+    --line: rgba(233, 229, 220, .2);
+    --grid: rgba(233, 229, 220, .05);
+    --grid-fine: rgba(233, 229, 220, .025);
+  }
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  font: 400 1.0625rem/1.65 var(--font-sans);
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+    linear-gradient(var(--grid-fine) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-fine) 1px, transparent 1px);
+  background-size: 6rem 6rem, 6rem 6rem, 1.2rem 1.2rem, 1.2rem 1.2rem;
+  background-position: center top;
+}
+
+html.no-grid body { background-image: none; }
+
+html.desk-surface body {
+  --desk: #9c7449;
+  background-color: var(--desk);
+
+  background-image:
+    repeating-linear-gradient(0.6deg, rgba(0,0,0,.055) 0 1px, transparent 1px 23px),
+    repeating-linear-gradient(0.6deg, rgba(0,0,0,.035) 0 2px, transparent 2px 61px),
+    repeating-linear-gradient(0.6deg, rgba(255,255,255,.028) 0 1px, transparent 1px 37px),
+    radial-gradient(120% 70% at 50% 0%, rgba(255,255,255,.08), transparent 62%),
+    radial-gradient(130% 90% at 50% 110%, rgba(0,0,0,.26), transparent 60%);
+  background-attachment: fixed;
+}
+@media (prefers-color-scheme: dark) {
+  html.desk-surface body { --desk: #3b2e22; }
+}
+
+body { position: relative; }
+
+html:not(.fullscreen) body { padding-bottom: 8rem; min-height: 100vh; }
+
+a { color: inherit; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+main { max-width: var(--content); margin: 0 auto; padding: 3rem var(--gutter); }
+
+h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; letter-spacing: -.01em; }
+h2 { font-size: 1.6rem; margin: 0 0 1.25rem; }
+
+@media (min-height: 520px) {
+  html.fullscreen, html.fullscreen body { height: 100%; overflow: hidden; }
+}

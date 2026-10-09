@@ -1,0 +1,58 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base
+  title="Projects — Andrew Mouchantaf"
+  description="Mechatronics, embedded, and mechanical design projects. Coming soon."
+  sheetTitle="Projects / Index" sheet="03/05" rev="C"
+>
+  <main>
+    <h1>Projects</h1>
+
+    <div class="site">
+      <svg class="stand" viewBox="0 0 260 200" role="img" aria-label="A construction barricade">
+        <defs>
+
+          <pattern id="hazard" width="26" height="26" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="26" height="26" fill="var(--paper)"/>
+            <rect width="13" height="26" fill="var(--trace)"/>
+          </pattern>
+        </defs>
+
+        <g stroke="var(--ink)" stroke-width="7" stroke-linecap="round">
+          <path d="M60 72 L36 176"/>
+          <path d="M86 72 L104 176"/>
+          <path d="M174 72 L156 176"/>
+          <path d="M200 72 L224 176"/>
+        </g>
+
+        <path d="M50 128 L212 128" stroke="var(--ink)" stroke-width="5" stroke-linecap="round"/>
+
+        <rect x="24" y="34" width="212" height="28" rx="3"
+              fill="url(#hazard)" stroke="var(--ink)" stroke-width="3"/>
+        <rect x="24" y="76" width="212" height="28" rx="3"
+              fill="url(#hazard)" stroke="var(--ink)" stroke-width="3"/>
+
+        <ellipse cx="236" cy="182" rx="22" ry="7" fill="var(--ink)" opacity=".16"/>
+        <path d="M236 116 L250 174 H222 Z" fill="#e0762c" stroke="var(--ink)" stroke-width="2.5" stroke-linejoin="round"/>
+        <path d="M230 142 H242 L244 152 H228 Z" fill="var(--paper)"/>
+        <rect x="214" y="172" width="44" height="9" rx="2.5" fill="#c9631f" stroke="var(--ink)" stroke-width="2.5"/>
+      </svg>
+
+      <p class="lede">Coming soon</p>
+    </div>
+  </main>
+</Base>
+
+<style>
+  h1 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.02em; line-height: 1.1; margin: 0 0 .5rem; }
+
+  .site {
+    display: flex; flex-direction: column; align-items: center; text-align: center;
+    padding: clamp(2rem, 7vh, 5rem) 0 clamp(3rem, 10vh, 7rem);
+  }
+  .stand { width: min(260px, 70vw); height: auto; margin-bottom: 2.5rem; }
+
+  .lede { font-family: var(--font-mono); font-size: 1rem; letter-spacing: .08em;
+          text-transform: uppercase; color: var(--ink); margin: 0; }
+</style>

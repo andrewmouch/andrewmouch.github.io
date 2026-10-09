@@ -1,0 +1,45 @@
+---
+import Base from '../layouts/Base.astro';
+import RobotHero from '../components/RobotHero.astro';
+---
+<Base title="Andrew Mouchantaf — mechatronics engineer" fullscreen sheetTitle="Index / Landing" sheet="02/05" rev="C">
+  <div class="sheet-wrap">
+    <RobotHero />
+    <div class="replay">
+      <button id="replay" type="button">Replay intro</button>
+    </div>
+  </div>
+</Base>
+
+<style>
+  .sheet-wrap { position: relative; }
+
+  .replay {
+    position: absolute; z-index: 3;
+    left: 50%; transform: translateX(-50%); bottom: 4.25rem;
+    width: 100%; max-width: var(--content);
+    padding: 0 var(--gutter);
+    pointer-events: none;
+  }
+  .replay button {
+    pointer-events: auto; cursor: pointer;
+    background: none; color: var(--muted);
+    border: 1px solid var(--line); border-radius: 2px;
+    padding: .4rem .85rem;
+    font-family: var(--font-mono); font-size: .7rem;
+    font-weight: 500; letter-spacing: .12em; text-transform: uppercase;
+    transition: color .15s, border-color .15s;
+  }
+  .replay button:hover { color: var(--accent); border-color: var(--accent); }
+
+  @media (max-width: 760px), (pointer: coarse), (prefers-reduced-motion: reduce) {
+    .replay { display: none; }
+  }
+</style>
+
+<script>
+  document.getElementById('replay')?.addEventListener('click', () => {
+    try { localStorage.removeItem('intro-seen'); } catch {}
+    location.href = '/';
+  });
+</script>

@@ -1,0 +1,1098 @@
+---
+interface Props { name?: string }
+const { name = 'ANDREW M' } = Astro.props;
+---
+<div class="scene">
+  <canvas id="iso-scene" aria-hidden="true"></canvas>
+  <p class="sr">An isometric scene: {name} in 3D block letters, with a tracked
+     robot that drives to the entry portal.</p>
+  <a class="sr-link" href="/home">Enter here</a>
+  <div class="readout">
+    <span><i class="label">Target</i><b id="iso-target">—</b></span>
+    <span><i class="label">Range</i><b class="num" id="iso-range">—</b></span>
+    <span><i class="label">Heading</i><b class="num" id="iso-head">—</b></span>
+    <span><i class="label">Drive</i><b class="num" id="iso-drive">—</b></span>
+    <span class="tip">Click the portal to enter.</span>
+  </div>
+</div>
+
+<style>
+  .scene { position: absolute; inset: 0; }
+  #iso-scene { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: default; }
+  #iso-scene.over-pad { cursor: pointer; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); margin: 0; }
+
+  .sr-link { position: absolute; left: -9999px; top: 0; z-index: 5; }
+  .sr-link:focus {
+    left: clamp(1.5rem, 4vw, 3rem); top: clamp(1.5rem, 4vw, 3rem);
+    background: var(--paper); color: var(--ink);
+    font-family: var(--font-mono); font-size: .8rem; letter-spacing: .12em;
+    text-transform: uppercase; padding: .6rem 1rem; border: 1px solid var(--trace);
+  }
+  .readout {
+    position: absolute; z-index: 3;
+    left: clamp(1.5rem, 4vw, 3rem); bottom: clamp(1.5rem, 4vw, 2.5rem);
+    width: min(34rem, calc(100% - 6rem));
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: .4rem 1.75rem;
+    padding-top: .9rem; border-top: 1px solid var(--line);
+    font-family: var(--font-mono); font-size: .8rem;
+    pointer-events: none;
+  }
+  .readout > span { display: flex; align-items: baseline; gap: .5rem; white-space: nowrap; }
+  .label {
+    font-family: var(--font-mono); font-size: .68rem; font-weight: 500;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+  }
+  .readout i { font-style: normal; }
+  .readout b { font-weight: 500; }
+  .num { font-variant-numeric: tabular-nums; }
+  #iso-target { color: var(--trace); letter-spacing: .1em; }
+
+  .tip { flex-basis: 100%; max-width: 28rem; color: var(--muted); white-space: normal !important; }
+  @media (max-width: 46rem) { .tip { display: none; } }
+</style>
+
+<script define:vars={{ nameText: name }}>
+  const cv = document.getElementById('iso-scene');
+  const ctx = cv.getContext('2d');
+  const elTarget = document.getElementById('iso-target');
+  const elRange = document.getElementById('iso-range');
+  const elHead = document.getElementById('iso-head');
+  const elDrive = document.getElementById('iso-drive');
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+  const easeOut = (t) => 1 - Math.pow(1 - t, 3);
+
+  const hex = (h) => {
+    const s = h.replace('#', '');
+    const n = s.length === 3 ? s.split('').map((c) => c + c).join('') : s;
+    return [parseInt(n.slice(0, 2), 16), parseInt(n.slice(2, 4), 16), parseInt(n.slice(4, 6), 16)];
+  };
+
+  const shade = (h, t) => {
+    let c; try { c = hex(h); } catch { return h; }
+    const to = t > 0 ? 255 : 0, k = Math.abs(t);
+    return `rgb(${c.map((v) => Math.round(v + (to - v) * k)).join(',')})`;
+  };
+
+  const FONT = {
+    A: ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+    C: ['.####', '#....', '#....', '#....', '#....', '#....', '.####'],
+    D: ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
+    E: ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
+    F: ['#####', '#....', '#....', '####.', '#....', '#....', '#....'],
+    H: ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+    M: ['#...#', '##.##', '#.#.#', '#.#.#', '#...#', '#...#', '#...#'],
+    N: ['#...#', '##..#', '##..#', '#.#.#', '#..##', '#..##', '#...#'],
+    O: ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+    R: ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
+    T: ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
+    U: ['#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+    W: ['#...#', '#...#', '#...#', '#.#.#', '#.#.#', '##.##', '#...#'],
+    ' ': ['.....', '.....', '.....', '.....', '.....', '.....', '.....'],
+  };
+  const GLYPH_W = 5, GLYPH_H = 7, GLYPH_GAP = 1, LINE_GAP = 3;
+  const LINES = [nameText];
+
+  function layout(lines) {
+    const runs = [];
+    let li = 0, cols = 0;
+    lines.forEach((text, line) => {
+      let col = 0;
+      for (const ch of text.toUpperCase()) {
+        const g = FONT[ch];
+        if (g) {
+          for (let r = 0; r < GLYPH_H; r++) {
+            for (let c = 0; c < GLYPH_W; c++) {
+              if (g[r][c] === '#') runs.push({ cx: col + c, cy: line * (GLYPH_H + LINE_GAP) + r, li });
+            }
+          }
+        }
+        col += GLYPH_W + GLYPH_GAP;
+        li++;
+      }
+      cols = Math.max(cols, col - GLYPH_GAP);
+    });
+    return { runs, cols, rows: lines.length * GLYPH_H + (lines.length - 1) * LINE_GAP, count: li };
+  }
+  const WORD = layout(LINES);
+
+  const WAYPOINTS = [{ label: 'ENTER HERE', href: '/home' }];
+
+  const AX = 1, AY = 0.5;
+  const BX = -1, BY = 0.5;
+  const DET = AX * BY - BX * AY;
+
+  const depthOf = (wx, wy) => wx * AY + wy * BY;
+
+  let W = 0, H = 0, dpr = 1, G = 12, ox = 0, oy = 0;
+  let s = 36, cell = 12, letterZ = 24, letterY0 = 0, letterX0 = 0;
+  let frontLimit = 0, maxSum = 0, minDiff = 0, maxDiff = 0;
+  let visible = true, last = 0, blinkUntil = 0, nextBlink = 2400;
+
+  let px = 0, py = 0, th = 0.9, v = 0, om = 0, treadL = 0, treadR = 0, z = 0, vz = 0;
+  let hoverIdx = -1, arrived = false, placed = false;
+  let homeWX = 0, homeWY = 0;
+  let cursor = { x: -1, y: -1 };
+
+  const OBST_N = 8;
+  let OBST = [];
+  let obstSpots = null;
+
+  let plan = null, planIdx = 0, planAt = 0;
+  let explored = [];
+
+  const DELAY = 220, STAGGER = 120;
+
+  const drops = Array.from({ length: WORD.count + OBST_N },
+    () => ({ z: 0, vz: 0, landed: false, started: false }));
+  const rings = [];
+  let dropH = 120, dropG = 0.35, startAt = 0;
+
+  let settledAt = 0, robotIn = false, landed = false, dropStartZ = 0;
+  const PAD_LAG = 260, PAD_STEP = 190, ROBOT_LAG = 320, PLAN_MS = 1400;
+
+  const SPIN_BASE = 0, SPIN_TURNS = 2;
+  const portalRings = [];
+
+  let holdAt = 0, sinkAt = 0, leaving = false;
+  const HOLD_MS = 650, SINK_MS = 1500;
+  const EXIT_SPIN = 0.17;
+  const PINK = '#ff4d9d';
+
+  const proj = (wx, wy, h = 0) => ({
+    x: ox + wx * AX + wy * BX,
+    y: oy + wx * AY + wy * BY - h,
+  });
+  const unproj = (sx, sy) => {
+    const dx = sx - ox, dy = sy - oy;
+    return { wx: (BY * dx - BX * dy) / DET, wy: (AX * dy - AY * dx) / DET };
+  };
+  const snap = (v) => Math.round(v / G) * G;
+
+  function resize() {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    W = cv.clientWidth; H = cv.clientHeight;
+    cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ox = W * 0.5; oy = H * 0.52;
+
+    const runLen0 = WORD.cols, rowLen0 = WORD.rows;
+    cell = (W * 0.42) / (runLen0 + rowLen0);
+    G = cell;
+    s = 4 * G;
+    letterZ = 2 * G;
+    dropH = 26 * G; dropG = dropH / 330;
+
+    const runLen = runLen0 * cell, rowLen = rowLen0 * cell;
+    const blockW = runLen + rowLen;
+    const left = W * 0.14;
+
+    const A = left - ox;
+    const C = (H * 0.4 - oy) - (AY * rowLen - BY * runLen) / 2;
+    letterY0 = snap((C - AY * A) / (AY + BY));
+    letterX0 = snap(A + letterY0);
+
+    const startX = W * 0.45;
+    const startY = H * 0.74;
+    const step = snap(4.6 * s);
+    const base = unproj(startX, startY);
+    const bx = snap(base.wx), by = snap(base.wy);
+
+    WAYPOINTS.forEach((wp) => {
+      wp.wx = bx;
+      wp.wy = by - step;
+      wp.r = 5 * G;
+    });
+
+    minDiff = W * 0.08 - ox;
+    maxDiff = W * 0.94 - ox;
+
+    frontLimit = H * 0.08;
+    maxSum = H * 0.9;
+
+    const SPACE_SLOT = GLYPH_W + GLYPH_GAP;
+    const nextCol = WORD.cols + GLYPH_GAP + SPACE_SLOT + GLYPH_W / 2;
+    homeWX = letterX0 + (GLYPH_H / 2) * cell;
+    homeWY = letterY0 - nextCol * cell;
+    if (!placed) { px = homeWX; py = homeWY; placed = true; }
+
+    if (!obstSpots) obstSpots = rollObstacles();
+    OBST = obstSpots.map(toObstacle);
+    plan = null; planIdx = 0;
+    if (still) draw(0);
+  }
+
+  const dims = () => ({
+    tl: s * 1.5, tw: s * 0.34, tsep: s * 0.39, thh: s * 0.24,
+    bl: s * 1.12, bw: s * 0.86, bh: s * 0.62,
+  });
+  function l2w(along, lat) {
+    const ct = Math.cos(th), st = Math.sin(th);
+    return { wx: px + along * ct - lat * st, wy: py + along * st + lat * ct };
+  }
+  function poly(pts, fill, alpha = 1) {
+    ctx.globalAlpha = alpha; ctx.fillStyle = fill;
+    ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
+  }
+
+  function worldBox(x0, x1, y0, y1, z0, z1, cTop, cX, cY) {
+    const p = proj;
+    poly([p(x1, y0, z0), p(x1, y1, z0), p(x1, y1, z1), p(x1, y0, z1)], cX);
+    poly([p(x0, y1, z0), p(x1, y1, z0), p(x1, y1, z1), p(x0, y1, z1)], cY);
+    poly([p(x0, y0, z1), p(x1, y0, z1), p(x1, y1, z1), p(x0, y1, z1)], cTop);
+  }
+
+  const runBox = (r) => ({
+    x0: letterX0 + r.cy * cell, x1: letterX0 + (r.cy + 1) * cell,
+    y0: letterY0 - (r.cx + 1) * cell, y1: letterY0 - r.cx * cell,
+  });
+
+  const PGRID = () => 1.5 * G;
+
+  const clearance = () => s * 0.62;
+  const kee = (i, j) => i + ',' + j;
+
+  function blockedCells() {
+    const p = PGRID(), c = clearance(), set = new Set();
+
+    const mark = (x0, x1, y0, y1) => {
+      const i0 = Math.floor((x0 - c) / p), i1 = Math.ceil((x1 + c) / p);
+      const j0 = Math.floor((y0 - c) / p), j1 = Math.ceil((y1 + c) / p);
+      for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+        const cx = i * p, cy = j * p;
+        const dx = Math.max(x0 - cx, 0, cx - x1), dy = Math.max(y0 - cy, 0, cy - y1);
+        if (Math.hypot(dx, dy) <= c) set.add(kee(i, j));
+      }
+    };
+    for (const r of WORD.runs) { const b = runBox(r); mark(b.x0, b.x1, b.y0, b.y1); }
+    for (const o of OBST) mark(o.x0, o.x1, o.y0, o.y1);
+    return set;
+  }
+
+  function freeNear(i, j, blocked) {
+    if (!blocked.has(kee(i, j))) return [i, j];
+    for (let r = 1; r < 14; r++) {
+      for (let di = -r; di <= r; di++) for (let dj = -r; dj <= r; dj++) {
+        if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
+        if (!blocked.has(kee(i + di, j + dj))) return [i + di, j + dj];
+      }
+    }
+    return [i, j];
+  }
+
+  function aStar(start, goal, blocked, bounds, order) {
+    const h = (i, j) => Math.hypot(i - goal[0], j - goal[1]);
+    const open = [start];
+    const g = new Map([[kee(...start), 0]]);
+    const f = new Map([[kee(...start), h(...start)]]);
+    const came = new Map(), done = new Set();
+    let guard = 0;
+    while (open.length && guard++ < 30000) {
+      let bi = 0;
+      for (let i = 1; i < open.length; i++) {
+        if ((f.get(kee(...open[i])) ?? Infinity) < (f.get(kee(...open[bi])) ?? Infinity)) bi = i;
+      }
+      const cur = open.splice(bi, 1)[0], ck = kee(...cur);
+      if (cur[0] === goal[0] && cur[1] === goal[1]) {
+        const out = [cur];
+        let k = ck;
+        while (came.has(k)) { const prev = came.get(k); out.unshift(prev); k = kee(...prev); }
+        return out;
+      }
+      done.add(ck);
+      if (order) order.push(cur);
+      for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+        if (!di && !dj) continue;
+        const ni = cur[0] + di, nj = cur[1] + dj, nk = kee(ni, nj);
+        if (ni < bounds.i0 || ni > bounds.i1 || nj < bounds.j0 || nj > bounds.j1) continue;
+        if (blocked.has(nk) || done.has(nk)) continue;
+
+        if (di && dj && (blocked.has(kee(cur[0] + di, cur[1])) || blocked.has(kee(cur[0], cur[1] + dj)))) continue;
+
+        const par = came.get(ck);
+        let parent = cur;
+        let ng = (g.get(ck) ?? Infinity) + Math.hypot(di, dj);
+        if (par && clearLine(par, [ni, nj], blocked)) {
+          const alt = (g.get(kee(...par)) ?? Infinity)
+            + Math.hypot(ni - par[0], nj - par[1]);
+          if (alt < ng) { parent = par; ng = alt; }
+        }
+        if (ng < (g.get(nk) ?? Infinity)) {
+          came.set(nk, parent); g.set(nk, ng); f.set(nk, ng + h(ni, nj));
+          if (!open.some((o) => o[0] === ni && o[1] === nj)) open.push([ni, nj]);
+        }
+      }
+    }
+    return null;
+  }
+
+  const clearLine = (a, b, blocked) => {
+    const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1])) * 2 || 1;
+    for (let k = 0; k <= n; k++) {
+      const t = k / n;
+      if (blocked.has(kee(Math.round(a[0] + (b[0] - a[0]) * t), Math.round(a[1] + (b[1] - a[1]) * t)))) return false;
+    }
+    return true;
+  };
+
+  function straighten(path, blocked) {
+    const out = [path[0]];
+    let i = 0;
+    while (i < path.length - 1) {
+      let j = path.length - 1;
+      while (j > i + 1 && !clearLine(path[i], path[j], blocked)) j--;
+      out.push(path[j]); i = j;
+    }
+    return out;
+  }
+
+  function makePlan(sx = px, sy = py) {
+    const p = PGRID(), blocked = blockedCells();
+    const cs = [[0, 0], [W, 0], [W, H], [0, H]].map(([x, y]) => unproj(x, y));
+    const bounds = {
+      i0: Math.floor(Math.min(...cs.map((c) => c.wx)) / p) - 2,
+      i1: Math.ceil(Math.max(...cs.map((c) => c.wx)) / p) + 2,
+      j0: Math.floor(Math.min(...cs.map((c) => c.wy)) / p) - 2,
+      j1: Math.ceil(Math.max(...cs.map((c) => c.wy)) / p) + 2,
+    };
+    const wp = WAYPOINTS[0];
+    const start = freeNear(Math.round(sx / p), Math.round(sy / p), blocked);
+    const goal = freeNear(Math.round(wp.wx / p), Math.round(wp.wy / p), blocked);
+    const order = [];
+    const raw = aStar(start, goal, blocked, bounds, order);
+    explored = order;
+
+    if (!raw) return [{ wx: wp.wx, wy: wp.wy }];
+    const pts = straighten(raw, blocked).map(([i, j]) => ({ wx: i * p, wy: j * p }));
+    pts.push({ wx: wp.wx, wy: wp.wy });
+    return pts;
+  }
+
+  const BARK = '#7a5c3f', BARK_D = '#5b4430';
+  const NEEDLE_F = '#5d8f72', NEEDLE_B = '#3c6450';
+  const COON = '#9aa0a6', COON_D = '#36393f', COON_L = '#ece9e2';
+  const SQRL = '#9c5f33', SQRL_L = '#c89463', SQRL_BELLY = '#e6d2b8';
+
+  const vary = (seed, n) => {
+    const v = Math.sin(seed + n * 78.233) * 43758.5453;
+    return v - Math.floor(v);
+  };
+
+  function drawPine(o, z) {
+    const cx = (o.x0 + o.x1) / 2, cy = (o.y0 + o.y1) / 2;
+    const r = Math.max(7, (o.x1 - o.x0) / 2);
+    const base = proj(cx, cy, z);
+    const seed = cx * 0.37 + cy * 0.71;
+    const topY = base.y - r * 4.6;
+
+    const w0 = r * 0.2, w1 = r * 0.07;
+    ctx.fillStyle = BARK;
+    ctx.beginPath();
+    ctx.moveTo(base.x - w0, base.y);
+    ctx.lineTo(base.x - w1, topY);
+    ctx.lineTo(base.x + w1, topY);
+    ctx.lineTo(base.x + w0, base.y);
+    ctx.closePath(); ctx.fill();
+
+    const tiers = 5;
+    for (let t = 0; t < tiers; t++) {
+      const f = t / (tiers - 1);
+      const yy = base.y - r * (0.75 + f * 3.5);
+      const spread = r * (1.45 - f * 1.05);
+      const droop = r * 0.42 * (1 - f * 0.4);
+      ctx.fillStyle = t % 2 ? NEEDLE_B : NEEDLE_F;
+
+      ctx.beginPath();
+      ctx.moveTo(base.x - spread, yy + droop);
+      ctx.quadraticCurveTo(base.x - spread * 0.45, yy - r * 0.3, base.x, yy - r * 0.42);
+      ctx.quadraticCurveTo(base.x + spread * 0.45, yy - r * 0.3, base.x + spread, yy + droop);
+      ctx.quadraticCurveTo(base.x, yy + droop * 0.5, base.x - spread, yy + droop);
+      ctx.closePath(); ctx.fill();
+
+      ctx.strokeStyle = t % 2 ? NEEDLE_B : NEEDLE_F;
+      ctx.lineWidth = Math.max(1, r * 0.07); ctx.lineCap = 'round';
+      for (let k = 0; k < 5; k++) {
+        const side = k % 2 ? 1 : -1;
+        const a = 0.45 + vary(seed, t * 7 + k) * 0.5;
+        const ex = base.x + side * spread * a * 1.25;
+        const ey = yy + droop * (0.6 + vary(seed, t * 11 + k) * 0.8);
+        ctx.beginPath();
+        ctx.moveTo(base.x + side * spread * a * 0.5, yy + droop * 0.1);
+        ctx.lineTo(ex, ey); ctx.stroke();
+      }
+    }
+
+    ctx.strokeStyle = NEEDLE_F; ctx.lineWidth = Math.max(1, r * 0.1);
+    ctx.beginPath(); ctx.moveTo(base.x, topY + r * 0.5); ctx.lineTo(base.x, topY - r * 0.25); ctx.stroke();
+  }
+
+  function tailTube(p0, c1, c2, p3, w0, w1, n, colourAt) {
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, u = 1 - t;
+      const x = u * u * u * p0.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * p3.x;
+      const y = u * u * u * p0.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * p3.y;
+      ctx.fillStyle = colourAt(t);
+      ctx.beginPath(); ctx.arc(x, y, w0 + (w1 - w0) * t, 0, 7); ctx.fill();
+    }
+  }
+  const contact = (b, w) => {
+    ctx.fillStyle = 'rgba(0,0,0,0.13)';
+    ctx.beginPath(); ctx.ellipse(b.x, b.y, w, w * 0.3, 0, 0, 7); ctx.fill();
+  };
+
+  function drawRaccoon(o, z) {
+    const cx = (o.x0 + o.x1) / 2, cy = (o.y0 + o.y1) / 2;
+    const r = Math.max(6, (o.x1 - o.x0) / 2);
+    const b = proj(cx, cy, z);
+    const u = r * 1.5;
+    if (z < 0.5) contact(b, u * 1.1);
+
+    ctx.fillStyle = COON_D;
+    for (const lx of [-0.5, 0.42]) {
+      ctx.beginPath(); ctx.ellipse(b.x + u * lx, b.y - u * 0.16, u * 0.14, u * 0.2, 0, 0, 7); ctx.fill();
+    }
+
+    tailTube(
+      { x: b.x - u * 0.62, y: b.y - u * 0.5 },
+      { x: b.x - u * 1.35, y: b.y - u * 0.42 },
+      { x: b.x - u * 1.75, y: b.y - u * 0.95 },
+      { x: b.x - u * 1.5, y: b.y - u * 1.3 },
+      u * 0.27, u * 0.17, 22,
+      (t) => (Math.floor(t * 5) % 2 ? COON_D : COON),
+    );
+
+    ctx.fillStyle = COON;
+    ctx.beginPath();
+    ctx.moveTo(b.x - u * 0.72, b.y - u * 0.42);
+    ctx.bezierCurveTo(b.x - u * 0.8, b.y - u * 1.0, b.x - u * 0.1, b.y - u * 1.12,
+                      b.x + u * 0.42, b.y - u * 0.95);
+    ctx.bezierCurveTo(b.x + u * 0.78, b.y - u * 0.84, b.x + u * 0.8, b.y - u * 0.34,
+                      b.x + u * 0.5, b.y - u * 0.2);
+    ctx.bezierCurveTo(b.x + u * 0.1, b.y - u * 0.08, b.x - u * 0.5, b.y - u * 0.1,
+                      b.x - u * 0.72, b.y - u * 0.42);
+    ctx.closePath(); ctx.fill();
+
+    for (const lx of [-0.34, 0.3]) {
+      ctx.fillStyle = COON_D;
+      ctx.beginPath(); ctx.ellipse(b.x + u * lx, b.y - u * 0.14, u * 0.15, u * 0.2, 0, 0, 7); ctx.fill();
+    }
+
+    ctx.fillStyle = COON;
+    ctx.beginPath(); ctx.ellipse(b.x + u * 0.72, b.y - u * 0.82, u * 0.37, u * 0.32, -0.1, 0, 7); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(b.x + u * 0.82, b.y - u * 0.95);
+    ctx.quadraticCurveTo(b.x + u * 1.26, b.y - u * 0.82, b.x + u * 1.2, b.y - u * 0.66);
+    ctx.quadraticCurveTo(b.x + u * 1.0, b.y - u * 0.58, b.x + u * 0.8, b.y - u * 0.66);
+    ctx.closePath(); ctx.fill();
+
+    for (const [ex, ey] of [[0.5, -1.06], [0.85, -1.08]]) {
+      ctx.fillStyle = COON;
+      ctx.beginPath(); ctx.ellipse(b.x + u * ex, b.y + u * ey, u * 0.15, u * 0.13, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = COON_D;
+      ctx.beginPath(); ctx.ellipse(b.x + u * ex, b.y + u * (ey + 0.02), u * 0.08, u * 0.07, 0, 0, 7); ctx.fill();
+    }
+
+    ctx.fillStyle = COON_L;
+    ctx.beginPath(); ctx.ellipse(b.x + u * 0.72, b.y - u * 1.0, u * 0.3, u * 0.12, -0.12, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(b.x + u * 1.07, b.y - u * 0.74, u * 0.16, u * 0.1, -0.1, 0, 7); ctx.fill();
+    ctx.fillStyle = COON_D;
+    ctx.beginPath(); ctx.ellipse(b.x + u * 0.78, b.y - u * 0.84, u * 0.3, u * 0.13, -0.12, 0, 7); ctx.fill();
+
+    ctx.fillStyle = COON_L;
+    for (const ex of [0.62, 0.92]) {
+      ctx.beginPath(); ctx.arc(b.x + u * ex, b.y - u * 0.85, u * 0.055, 0, 7); ctx.fill();
+    }
+    ctx.fillStyle = COON_D;
+    ctx.beginPath(); ctx.arc(b.x + u * 1.22, b.y - u * 0.72, u * 0.06, 0, 7); ctx.fill();
+  }
+
+  function drawSquirrel(o, z) {
+    const cx = (o.x0 + o.x1) / 2, cy = (o.y0 + o.y1) / 2;
+    const r = Math.max(6, (o.x1 - o.x0) / 2);
+    const b = proj(cx, cy, z);
+    const u = r * 1.45;
+    if (z < 0.5) contact(b, u * 0.75);
+
+    const t0 = { x: b.x - u * 0.2, y: b.y - u * 0.25 };
+    const t1 = { x: b.x - u * 1.5, y: b.y - u * 0.5 };
+    const t2 = { x: b.x - u * 1.5, y: b.y - u * 2.5 };
+    const t3 = { x: b.x - u * 0.15, y: b.y - u * 2.35 };
+    tailTube(t0, t1, t2, t3, u * 0.3, u * 0.42, 26, () => SQRL_L);
+    tailTube(t0, t1, t2, t3, u * 0.17, u * 0.24, 26, () => SQRL);
+
+    ctx.fillStyle = SQRL;
+    ctx.beginPath(); ctx.ellipse(b.x - u * 0.04, b.y - u * 0.4, u * 0.42, u * 0.4, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(b.x + u * 0.3, b.y - u * 0.12, u * 0.25, u * 0.12, -0.15, 0, 7); ctx.fill();
+
+    ctx.beginPath(); ctx.ellipse(b.x + u * 0.06, b.y - u * 0.9, u * 0.36, u * 0.56, -0.12, 0, 7); ctx.fill();
+
+    ctx.fillStyle = SQRL_BELLY;
+    ctx.beginPath(); ctx.ellipse(b.x + u * 0.22, b.y - u * 0.82, u * 0.17, u * 0.34, -0.16, 0, 7); ctx.fill();
+
+    ctx.fillStyle = SQRL;
+    ctx.beginPath(); ctx.ellipse(b.x + u * 0.22, b.y - u * 1.52, u * 0.31, u * 0.28, -0.08, 0, 7); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(b.x + u * 0.34, b.y - u * 1.62);
+    ctx.quadraticCurveTo(b.x + u * 0.68, b.y - u * 1.5, b.x + u * 0.6, b.y - u * 1.36);
+    ctx.quadraticCurveTo(b.x + u * 0.42, b.y - u * 1.32, b.x + u * 0.3, b.y - u * 1.4);
+    ctx.closePath(); ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(b.x + u * 0.04, b.y - u * 1.68);
+    ctx.quadraticCurveTo(b.x - u * 0.04, b.y - u * 2.02, b.x + u * 0.16, b.y - u * 1.86);
+    ctx.quadraticCurveTo(b.x + u * 0.2, b.y - u * 1.74, b.x + u * 0.04, b.y - u * 1.68);
+    ctx.closePath(); ctx.fill();
+
+    ctx.fillStyle = SQRL_L;
+    ctx.beginPath(); ctx.ellipse(b.x + u * 0.38, b.y - u * 1.08, u * 0.13, u * 0.1, -0.3, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(b.x + u * 0.32, b.y - u * 0.94, u * 0.12, u * 0.09, -0.3, 0, 7); ctx.fill();
+
+    ctx.fillStyle = '#241a10';
+    ctx.beginPath(); ctx.arc(b.x + u * 0.3, b.y - u * 1.58, u * 0.085, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(b.x + u * 0.61, b.y - u * 1.45, u * 0.055, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath(); ctx.arc(b.x + u * 0.33, b.y - u * 1.61, u * 0.03, 0, 7); ctx.fill();
+  }
+
+  const SCENERY = { pine: drawPine, raccoon: drawRaccoon, squirrel: drawSquirrel };
+  const drawScenery = (o, z) => (SCENERY[o.species] || drawPine)(o, z);
+
+  const SPECIES = ['pine', 'raccoon', 'squirrel'];
+  const KINDS = ['pine', 'pine', 'raccoon', 'squirrel'];
+  const KIND_SIZE = { pine: 2.1, raccoon: 1.5, squirrel: 1.35 };
+
+  function rollKinds() {
+    const bag = SPECIES.slice();
+    while (bag.length < OBST_N) bag.push(KINDS[Math.floor(Math.random() * KINDS.length)]);
+    for (let i = bag.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [bag[i], bag[j]] = [bag[j], bag[i]];
+    }
+    return bag;
+  }
+  const toObstacle = ([fx, fy, jitter, kind]) => {
+    const w = unproj(W * fx, H * fy);
+    const half = (KIND_SIZE[kind] || 2.1) * (0.85 + jitter * 0.3) * G;
+    return {
+      kind,
+      x0: snap(w.wx - half), x1: snap(w.wx + half),
+      y0: snap(w.wy - half), y1: snap(w.wy + half),
+    };
+  };
+  const overlaps = (a, b, pad = 0) =>
+    a.x0 - pad < b.x1 && a.x1 + pad > b.x0 && a.y0 - pad < b.y1 && a.y1 + pad > b.y0;
+
+  function rollObstacles() {
+    const wp = WAYPOINTS[0];
+    const home = { x0: homeWX - s, x1: homeWX + s, y0: homeWY - s, y1: homeWY + s };
+    const pad = { x0: wp.wx - wp.r, x1: wp.wx + wp.r, y0: wp.wy - wp.r, y1: wp.wy + wp.r };
+    const letterBoxes = WORD.runs.map(runBox);
+
+    const block = letterBoxes.reduce((a, b) => ({
+      x0: Math.min(a.x0, b.x0), x1: Math.max(a.x1, b.x1),
+      y0: Math.min(a.y0, b.y0), y1: Math.max(a.y1, b.y1),
+    }));
+
+    for (let attempt = 0; attempt < 140; attempt++) {
+      const bag = rollKinds();
+      const spots = [];
+      let guard = 0;
+      while (spots.length < OBST_N && guard++ < 900) {
+        const fx = 0.34 + Math.random() * 0.48;
+        const fy = 0.32 + Math.random() * 0.42;
+        const jitter = Math.random();
+        const kind = bag[spots.length];
+        const cand = toObstacle([fx, fy, jitter, kind]);
+
+        if (overlaps(cand, home, s * 0.5)) continue;
+        if (overlaps(cand, pad, s * 0.9)) continue;
+        if (overlaps(cand, block, G)) continue;
+
+        if (spots.some((sp) => overlaps(cand, toObstacle(sp), s * 1.7))) continue;
+        spots.push([fx, fy, jitter, kind]);
+      }
+      if (spots.length < OBST_N) continue;
+
+      OBST = spots.map(toObstacle);
+      if (makePlan(homeWX, homeWY).length > 1) return spots;
+    }
+    return [];
+  }
+
+  const hasRuns = new Set(WORD.runs.map((r) => r.li));
+
+  function dropCentre(i) {
+    if (i >= WORD.count) {
+      const o = OBST[i - WORD.count];
+      return o ? { wx: (o.x0 + o.x1) / 2, wy: (o.y0 + o.y1) / 2 } : null;
+    }
+    if (!hasRuns.has(i)) return null;
+    const col = i * (GLYPH_W + GLYPH_GAP);
+    return { wx: letterX0 + (GLYPH_H / 2) * cell, wy: letterY0 - (col + GLYPH_W / 2) * cell };
+  }
+
+  function updateDrops(now, dt) {
+    if (!startAt) startAt = now;
+    for (let i = 0; i < drops.length; i++) {
+      const d = drops[i];
+      if (d.landed) continue;
+      if (now - startAt < DELAY + i * STAGGER) continue;
+      if (!d.started) { d.started = true; d.z = dropH; d.vz = 0; }
+      d.vz -= dropG * dt; d.z += d.vz * dt;
+      if (d.z <= 0) {
+        d.z = 0;
+        const c = dropCentre(i);
+        if (c) rings.push({ ...c, t: 0, hit: Math.min(1, Math.abs(d.vz) / 9) });
+        if (Math.abs(d.vz) < dropG * 7) { d.vz = 0; d.landed = true; }
+        else d.vz = -d.vz * 0.3;
+      }
+    }
+    for (let i = rings.length - 1; i >= 0; i--) {
+      rings[i].t += 0.035 * dt;
+      if (rings[i].t >= 1) rings.splice(i, 1);
+    }
+
+    if (WAYPOINTS[0].appear >= 1) {
+      const last = portalRings[portalRings.length - 1];
+      if (!last || last.t > 0.28) portalRings.push({ t: 0 });
+    }
+    for (let i = portalRings.length - 1; i >= 0; i--) {
+      portalRings[i].t += 0.009 * dt;
+      if (portalRings[i].t >= 1) portalRings.splice(i, 1);
+    }
+  }
+
+  function updateStaging(now) {
+    if (still) {
+      settledAt = settledAt || 1;
+      robotIn = true; landed = true; z = 0; vz = 0;
+      WAYPOINTS.forEach((wp) => (wp.appear = 1));
+      return;
+    }
+
+    if (!settledAt && drops.every((d) => d.landed)) settledAt = now;
+    WAYPOINTS.forEach((wp, i) => {
+      wp.appear = settledAt ? clamp((now - (settledAt + PAD_LAG + i * PAD_STEP)) / 430, 0, 1) : 0;
+    });
+
+    if (startAt && !robotIn && now - startAt >= DELAY + drops.length * STAGGER) {
+      robotIn = true; dropStartZ = dropH; z = dropStartZ; vz = 0;
+    }
+  }
+
+  function groundCircle(cx, cy, r, h = 0, n = 48) {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      pts.push(proj(cx + Math.cos(a) * r, cy + Math.sin(a) * r, h));
+    }
+    return pts;
+  }
+  function tracePath(pts) {
+    ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath();
+  }
+
+  function update(now, dt) {
+    updateDrops(now, dt);
+    updateStaging(now);
+    const d = dims();
+
+    if (robotIn && !still) {
+      vz -= 0.28 * dt;
+      z += vz * dt;
+      if (z <= 0) {
+        z = 0;
+        if (!landed) {
+          landed = true;
+          rings.push({ wx: px, wy: py, t: 0, hit: 1 });
+        }
+        vz = 0;
+      }
+    }
+
+    if (!robotIn) {
+      elTarget.textContent = '—'; elRange.textContent = '—';
+      elHead.textContent = '—'; elDrive.textContent = 'standby';
+      return;
+    }
+
+    if (!landed) {
+      th = SPIN_BASE;
+      v = 0; om = 0;
+      elTarget.textContent = 'ACQUIRING';
+      elRange.textContent = '—';
+      elHead.textContent = `${((((th * 180) / Math.PI) % 360) + 360) % 360 | 0}°`;
+      elDrive.textContent = 'dropping';
+      return;
+    }
+
+    const wp = WAYPOINTS[0];
+
+    if (!plan) {
+      if (!planAt) planAt = now;
+      plan = makePlan(); planIdx = 0;
+    }
+    if (now - planAt < PLAN_MS) {
+      v *= Math.pow(0.9, dt); om = 0;
+      elTarget.textContent = wp.label; elRange.textContent = '—';
+      elHead.textContent = `${((((th * 180) / Math.PI) % 360) + 360) % 360 | 0}°`;
+      elDrive.textContent = 'planning';
+      return;
+    }
+
+    const lead = s * 1.6;
+    while (planIdx < plan.length - 1
+           && Math.hypot(plan[planIdx].wx - px, plan[planIdx].wy - py) < lead) planIdx++;
+    const atEnd = planIdx >= plan.length - 1;
+    const leg = plan[planIdx];
+    const dx = leg.wx - px, dy = leg.wy - py, dist = Math.hypot(dx, dy);
+    const stop = atEnd ? s * 0.5 : 0;
+    arrived = atEnd && Math.hypot(wp.wx - px, wp.wy - py) < s * 0.8;
+
+    if (arrived && !holdAt) holdAt = now;
+    if (holdAt && !sinkAt && now - holdAt > HOLD_MS) sinkAt = now;
+    if (sinkAt) {
+      const t = clamp((now - sinkAt) / SINK_MS, 0, 1);
+      const prev = th;
+      th += EXIT_SPIN * dt;
+      treadL += (th - prev) * d.tsep; treadR -= (th - prev) * d.tsep;
+
+      z = -(d.thh + d.bh + s * 1.1) * (t * t);
+      px += (wp.wx - px) * 0.12 * dt;
+      py += (wp.wy - py) * 0.12 * dt;
+      v = 0; om = 0;
+      elTarget.textContent = wp.label;
+      elRange.textContent = '0';
+      elHead.textContent = `${((((th * 180) / Math.PI) % 360) + 360) % 360 | 0}°`;
+      elDrive.textContent = 'entering';
+      if (t >= 1 && !leaving) {
+        leaving = true;
+        try { sessionStorage.setItem('iso-exit-spin', String(EXIT_SPIN)); } catch {}
+        location.href = wp.href;
+      }
+      return;
+    }
+
+    const err = wrapAngle(Math.atan2(dy, dx) - th);
+    om += (clamp(err * 2.4, -0.075, 0.075) - om) * 0.18 * dt;
+    const align = Math.max(0, Math.cos(err));
+    v += ((dist > stop ? s * 0.085 * align : 0) - v) * 0.1 * dt;
+
+    th += om * dt;
+    px += Math.cos(th) * v * dt;
+    py += Math.sin(th) * v * dt;
+
+    const p = proj(px, py, 0);
+    const back = unproj(clamp(p.x, ox + minDiff, ox + maxDiff), clamp(p.y, frontLimit, maxSum));
+    px = back.wx; py = back.wy;
+
+    treadL += (v + om * d.tsep) * dt;
+    treadR += (v - om * d.tsep) * dt;
+    if (now > nextBlink) { blinkUntil = now + 130; nextBlink = now + 2600 + Math.random() * 3000; }
+
+    elTarget.textContent = wp.label;
+    elRange.textContent = `${Math.round(dist)}`;
+    elHead.textContent = `${((((th * 180) / Math.PI) % 360) + 360) % 360 | 0}°`;
+    elDrive.textContent = arrived ? 'hold' : `${((v / (s * 0.085)) * 100) | 0}%`;
+  }
+
+  function drawGrid(ink) {
+    const cs = [[0, 0], [W, 0], [W, H], [0, H]].map(([x, y]) => unproj(x, y));
+    const minX = Math.min(...cs.map((c) => c.wx)), maxX = Math.max(...cs.map((c) => c.wx));
+    const minY = Math.min(...cs.map((c) => c.wy)), maxY = Math.max(...cs.map((c) => c.wy));
+
+    const P = G * 2;
+    ctx.strokeStyle = css('--grid') || ink; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let k = Math.ceil(minX / P); k <= Math.floor(maxX / P); k++) {
+      const a = proj(k * P, minY), b = proj(k * P, maxY);
+      ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+    }
+    for (let k = Math.ceil(minY / P); k <= Math.floor(maxY / P); k++) {
+      const a = proj(minX, k * P), b = proj(maxX, k * P);
+      ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+    }
+    ctx.stroke();
+  }
+
+  function drawRobot(now, ink, paper, accent) {
+    const d = dims();
+
+    const lift = clamp(z / (s * 1.2), 0, 1);
+    if (z >= 0) {
+      poly([[-d.tl / 2, -d.tsep - d.tw / 2], [d.tl / 2, -d.tsep - d.tw / 2],
+            [d.tl / 2, d.tsep + d.tw / 2], [-d.tl / 2, d.tsep + d.tw / 2]]
+        .map(([a, l]) => l2w(a, l)).map((w) => proj(w.wx, w.wy, 0)), ink, 0.16 * (1 - lift * 0.55));
+    }
+
+    const localBox = (a0, a1, l0, l1, z0, z1) => {
+      const c = [[a0, l0], [a1, l0], [a1, l1], [a0, l1]].map(([a, l]) => l2w(a, l));
+      const bot = c.map((w) => proj(w.wx, w.wy, z0)), top = c.map((w) => proj(w.wx, w.wy, z1));
+      for (let i = 0; i < 4; i++) poly([bot[i], bot[(i + 1) % 4], top[(i + 1) % 4], top[i]], ink, i % 2 ? 0.9 : 0.76);
+      poly(top, ink, 1);
+    };
+
+    function trackSeg(side, a0, a1) {
+      const l0 = side * d.tsep - d.tw / 2, l1 = side * d.tsep + d.tw / 2;
+      localBox(a0, a1, l0, l1, z, z + d.thh);
+      const phase = side < 0 ? treadR : treadL, gap = s * 0.2;
+      ctx.strokeStyle = paper; ctx.lineWidth = Math.max(1.2, s * 0.05); ctx.globalAlpha = 0.85;
+      const first = -d.tl / 2 + (((phase % gap) + gap) % gap);
+      for (let a = first; a <= d.tl / 2; a += gap) {
+        if (a < a0 || a >= a1) continue;
+        const p1 = l2w(a, l0 + d.tw * 0.14), p2 = l2w(a, l1 - d.tw * 0.14);
+        const q1 = proj(p1.wx, p1.wy, z + d.thh), q2 = proj(p2.wx, p2.wy, z + d.thh);
+        ctx.beginPath(); ctx.moveTo(q1.x, q1.y); ctx.lineTo(q2.x, q2.y); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = accent;
+      for (const end of [-1, 1]) {
+        const ea = end * d.tl * 0.42;
+        if (ea < a0 || ea >= a1) continue;
+        const c = l2w(ea, side * d.tsep), q = proj(c.wx, c.wy, z + d.thh);
+        ctx.beginPath(); ctx.arc(q.x, q.y, s * 0.07, 0, 7); ctx.fill();
+      }
+    }
+
+    const bz = z + d.thh;
+    const SEG = 8, pieces = [];
+    for (const side of [-1, 1]) {
+      for (let k = 0; k < SEG; k++) {
+        const a0 = -d.tl / 2 + (k * d.tl) / SEG, a1 = -d.tl / 2 + ((k + 1) * d.tl) / SEG;
+        const c = l2w((a0 + a1) / 2, side * d.tsep);
+        pieces.push({ depth: depthOf(c.wx, c.wy), run: () => trackSeg(side, a0, a1) });
+      }
+    }
+    const bc = l2w(0, 0);
+
+    pieces.push({
+      depth: depthOf(bc.wx, bc.wy) + 1e-4,
+      run: () => localBox(-d.bl / 2, d.bl / 2, -d.bw / 2, d.bw / 2, bz, bz + d.bh),
+    });
+    pieces.sort((a, b) => a.depth - b.depth);
+    for (const p of pieces) p.run();
+
+    const base = l2w(-d.bl * 0.3, 0), lag = -om * s * 6;
+    const tip = l2w(-d.bl * 0.3 + lag, lag * 0.4);
+    const b1 = proj(base.wx, base.wy, bz + d.bh), b2 = proj(tip.wx, tip.wy, bz + d.bh + s * 0.55);
+    ctx.strokeStyle = ink; ctx.lineWidth = s * 0.06; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(b1.x, b1.y); ctx.quadraticCurveTo(b1.x, b2.y, b2.x, b2.y); ctx.stroke();
+    ctx.fillStyle = accent;
+    ctx.beginPath(); ctx.arc(b2.x, b2.y, s * 0.09, 0, 7); ctx.fill();
+
+    const ct = Math.cos(th), st = Math.sin(th);
+    const fc = l2w(d.bl / 2, 0), fo = proj(fc.wx, fc.wy, bz + d.bh * 0.5);
+    ctx.save();
+
+    ctx.transform(-st * AX + ct * BX, -st * AY + ct * BY, 0, -1, fo.x, fo.y);
+    if (depthOf(ct, st) > 0) {
+      ctx.fillStyle = paper;
+      ctx.beginPath(); ctx.roundRect(-d.bw * 0.34, -d.bh * 0.26, d.bw * 0.68, d.bh * 0.52, s * 0.12); ctx.fill();
+      const blink = now < blinkUntil ? 0.12 : 1;
+      ctx.fillStyle = accent; ctx.strokeStyle = accent; ctx.lineWidth = s * 0.07;
+      for (const side of [-1, 1]) {
+        const x = side * d.bw * 0.16;
+        if (arrived) { ctx.beginPath(); ctx.arc(x, 0, s * 0.08, Math.PI * 0.1, Math.PI * 0.9); ctx.stroke(); }
+        else { ctx.beginPath(); ctx.ellipse(x, 0, s * 0.07, s * 0.095 * blink, 0, 0, 7); ctx.fill(); }
+      }
+    }
+    ctx.restore();
+  }
+
+  function robotLayer(now, ink, paper, accent) {
+    if (z >= 0) { drawRobot(now, ink, paper, accent); return; }
+    const wp = WAYPOINTS[0];
+    const mouth = groundCircle(wp.wx, wp.wy, wp.r, 0);
+    const topY = Math.min(...mouth.map((c) => c.y));
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, W, topY);
+    ctx.moveTo(mouth[0].x, mouth[0].y);
+    for (let i = 1; i < mouth.length; i++) ctx.lineTo(mouth[i].x, mouth[i].y);
+    ctx.closePath();
+    ctx.clip();
+    drawRobot(now, ink, paper, accent);
+    ctx.restore();
+  }
+
+  function draw(now) {
+    ctx.clearRect(0, 0, W, H);
+    const ink = css('--ink'), paper = css('--paper'), accent = css('--accent'), trace = css('--trace');
+    const cTop = shade(accent, 0.3), cX = shade(accent, -0.3), cY = shade(accent, -0.08);
+
+    drawGrid(ink);
+
+    for (const r of rings) {
+      const spread = cell * (1.2 + r.t * 2.6);
+      const q = [[-1, 0], [0, -1], [1, 0], [0, 1]].map(([a, b]) => proj(r.wx + a * spread, r.wy + b * spread, 0));
+      ctx.strokeStyle = trace; ctx.globalAlpha = (1 - r.t) * 0.5 * r.hit; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(q[0].x, q[0].y);
+      for (let k = 1; k < 4; k++) ctx.lineTo(q[k].x, q[k].y);
+      ctx.closePath(); ctx.stroke(); ctx.globalAlpha = 1;
+    }
+
+    WAYPOINTS.forEach((wp) => {
+      const a = wp.appear || 0;
+      if (a <= 0) return;
+
+      const set = clamp((a - 0.5) / 0.5, 0, 1);
+      const rr = wp.r * (0.45 + 0.55 * easeOut(a));
+      const edge = PINK;
+
+      poly(groundCircle(wp.wx, wp.wy, rr), edge, set >= 1 ? 0.22 : 0.22 * a);
+      ctx.strokeStyle = edge; ctx.lineWidth = 2;
+      tracePath(groundCircle(wp.wx, wp.wy, rr)); ctx.stroke();
+
+      if (set < 1) {
+        ctx.strokeStyle = PINK; ctx.globalAlpha = (1 - set) * 0.75; ctx.lineWidth = 1.5;
+        tracePath(groundCircle(wp.wx, wp.wy, wp.r * (1 + (1 - set) * 0.9))); ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
+      if (a >= 1) {
+        ctx.lineWidth = 2;
+        for (const r of portalRings) {
+          const t = r.t;
+          ctx.strokeStyle = PINK;
+          ctx.globalAlpha = (1 - t) * 0.55;
+          tracePath(groundCircle(wp.wx, wp.wy, wp.r * (0.85 + t * 0.65), t * wp.r * 2.6));
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+
+        const c = proj(wp.wx, wp.wy, 0);
+        ctx.fillStyle = PINK;
+        ctx.font = `600 ${Math.max(13, s * 0.42)}px "IBM Plex Mono", ui-monospace, monospace`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+        ctx.letterSpacing = '0.18em';
+        ctx.fillText(wp.label, c.x, c.y + wp.r * 0.72 + Math.max(18, s * 0.6));
+        ctx.letterSpacing = '0px';
+      }
+    });
+
+    if (planAt && explored.length) {
+      const age = now - planAt;
+      const fade = age > PLAN_MS ? clamp(1 - (age - PLAN_MS) / 450, 0, 1) : 1;
+      if (fade > 0) {
+        const p = PGRID(), hw = p * 0.4;
+        const n = Math.floor(clamp(age / PLAN_MS, 0, 1) * explored.length);
+        ctx.fillStyle = accent; ctx.globalAlpha = 0.14 * fade;
+        ctx.beginPath();
+        for (let k = 0; k < n; k++) {
+          const cx = explored[k][0] * p, cy = explored[k][1] * p;
+          const a = proj(cx - hw, cy - hw), b2 = proj(cx + hw, cy - hw);
+          const c2 = proj(cx + hw, cy + hw), d2 = proj(cx - hw, cy + hw);
+          ctx.moveTo(a.x, a.y); ctx.lineTo(b2.x, b2.y);
+          ctx.lineTo(c2.x, c2.y); ctx.lineTo(d2.x, d2.y); ctx.closePath();
+        }
+        ctx.fill();
+
+        ctx.globalAlpha = 0.5 * fade; ctx.fillStyle = PINK;
+        ctx.beginPath();
+        for (let k = Math.max(0, n - 40); k < n; k++) {
+          const cx = explored[k][0] * p, cy = explored[k][1] * p;
+          const a = proj(cx - hw, cy - hw), b2 = proj(cx + hw, cy - hw);
+          const c2 = proj(cx + hw, cy + hw), d2 = proj(cx - hw, cy + hw);
+          ctx.moveTo(a.x, a.y); ctx.lineTo(b2.x, b2.y);
+          ctx.lineTo(c2.x, c2.y); ctx.lineTo(d2.x, d2.y); ctx.closePath();
+        }
+        ctx.fill(); ctx.globalAlpha = 1;
+      }
+    }
+
+    const planA = planAt ? clamp((now - planAt - PLAN_MS * 0.7) / 400, 0, 1) : 0;
+    if (plan && plan.length > 1 && planA > 0) {
+      const q = plan.map((pt) => proj(pt.wx, pt.wy, 0));
+      ctx.save();
+      ctx.strokeStyle = accent; ctx.globalAlpha = 0.5 * planA;
+      ctx.lineWidth = 1.5; ctx.setLineDash([6, 5]);
+      ctx.beginPath(); ctx.moveTo(q[0].x, q[0].y);
+      for (let i = 1; i < q.length; i++) ctx.lineTo(q[i].x, q[i].y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = accent; ctx.globalAlpha = 0.65 * planA;
+      for (let i = 1; i < q.length - 1; i++) {
+        ctx.beginPath(); ctx.arc(q[i].x, q[i].y, 2.5, 0, 7); ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    const items = [];
+    for (const r of WORD.runs) {
+      const d = drops[r.li];
+      if (!d.started && !still) continue;
+      const b = runBox(r);
+
+      items.push({ depth: depthOf((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2), kind: 'box', ...b, z: still ? 0 : d.z });
+    }
+    OBST.forEach((o, i) => {
+      const d = drops[WORD.count + i];
+      if (!d.started && !still) return;
+      items.push({
+        depth: depthOf((o.x0 + o.x1) / 2, (o.y0 + o.y1) / 2), kind: 'obst',
+
+        species: o.kind,
+        x0: o.x0, x1: o.x1, y0: o.y0, y1: o.y1, z: still ? 0 : d.z,
+      });
+    });
+    if (robotIn) items.push({ depth: depthOf(px, py), kind: 'robot' });
+    items.sort((a, b) => a.depth - b.depth);
+    for (const it of items) {
+      if (it.kind === 'robot') { robotLayer(now, ink, paper, accent); continue; }
+      const shadow = 0.1 * clamp(1 - it.z / dropH, 0, 1);
+      if (it.kind === 'obst') {
+        if (it.z > 0.5) {
+          poly(groundCircle((it.x0 + it.x1) / 2, (it.y0 + it.y1) / 2, (it.x1 - it.x0) / 2), ink, shadow);
+        }
+        drawScenery(it, it.z);
+        continue;
+      }
+      if (it.z > 0.5) {
+        poly([[it.x0, it.y0], [it.x1, it.y0], [it.x1, it.y1], [it.x0, it.y1]]
+          .map(([x, y]) => proj(x, y, 0)), ink, shadow);
+      }
+      worldBox(it.x0, it.x1, it.y0, it.y1, it.z, it.z + letterZ, cTop, cX, cY);
+    }
+  }
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (!visible || still) return;
+    const dt = Math.min((now - (last || now)) / 16.67, 2); last = now;
+    update(now, dt); draw(now);
+  }
+
+  function padAt(sx, sy) {
+    for (let i = 0; i < WAYPOINTS.length; i++) {
+      const wp = WAYPOINTS[i], c = proj(wp.wx, wp.wy, 0);
+      if (Math.abs(sx - c.x) < wp.r * 1.4 && Math.abs(sy - c.y) < wp.r * 0.9) return i;
+    }
+    return -1;
+  }
+
+  cv.addEventListener('pointermove', (e) => {
+    const r = cv.getBoundingClientRect();
+    cursor = { x: e.clientX - r.left, y: e.clientY - r.top };
+    const i = padAt(cursor.x, cursor.y);
+    hoverIdx = i;
+    cv.classList.toggle('over-pad', i >= 0);
+  });
+  cv.addEventListener('pointerleave', () => { hoverIdx = -1; cursor = { x: -1, y: -1 }; cv.classList.remove('over-pad'); });
+  cv.addEventListener('pointerdown', (e) => {
+    const r = cv.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    const i = padAt(x, y);
+    if (i >= 0) location.href = WAYPOINTS[i].href;
+    else if (z === 0 && landed) vz = s * 0.13;
+  });
+
+  new IntersectionObserver(([e]) => (visible = e.isIntersecting)).observe(cv);
+  addEventListener('resize', resize);
+  resize(); requestAnimationFrame(frame);
+</script>

@@ -1,0 +1,260 @@
+---
+import Base from '../layouts/Base.astro';
+
+const experience = [
+  {
+    role: 'Embedded Systems Engineer', org: 'Deep Breathe',
+    dates: 'Mar 2026 — Present', where: 'Toronto, ON',
+    points: [
+      'Led a cross-functional team to develop a custom ultrasound probe with integrated AI pathology inference, planning the development roadmap and driving the project through funding and regulatory milestones.',
+      'Built a custom probe prototype with a 3D-printed shell, an ESP32-S3 MCU, a touch LCD screen, and a docking station tablet interface, demoing the device to ICU clinicians to solicit early design feedback.',
+      'Quantized models and designed a benchmark methodology to analyze performance of various candidate processors, enabling a compact form factor and minimising manufacturing costs and inference latency.',
+      'Designed a device entitlement and identity platform for managing access and data retrieval for organization users.',
+      'Optimized the model library to leverage a new model format, reducing FAST and hemothorax inference latencies by 30%.',
+    ],
+  },
+  {
+    role: 'Software Engineer', org: 'DoorDash',
+    dates: 'Aug 2022 — Dec 2025', where: 'Seattle, WA',
+    points: [
+      'Led a new authorization service with updated profiles and role-based access, migrating all ~2M DoorDash merchant users with zero downtime and incidents through data transformation jobs and request shadowing.',
+      'Implemented a graph data model and search API, replacing a legacy tree structure and migrating ~8M vendor entities to reduce support requests and enable >$10M in annual revenue from new product verticals.',
+      'Delivered a consolidation platform for Kubernetes cost and utilization across all DoorDash engineering deployments via data-collector pods and ETL pipelines, identifying ~$10M of annual savings from overprovisioned resources.',
+      'Architected an internal cost alerting platform with data pipelines, cost analysis workflows, and a presentation API to detect spending anomalies across engineering teams, delivering ~$500k in average annual savings.',
+      'Developed request hedging tools at the orchestration layer, improving responsiveness for unreliable services by ~70% and reducing false alerts to on-call engineers.',
+    ],
+  },
+];
+
+const projects = [
+  {
+    name: 'TCP Connection Analyzer', dates: 'Jan 2026',
+    points: [
+      'A real-time passive connection analyzer in C using raw Linux packet sockets, with multi-layer parsing for Ethernet, IPv4 and TCP headers, checksum validation and flag decoding.',
+    ],
+  },
+  {
+    name: 'Facial Expression Operated Motorized Wheelchair', dates: 'Sep 2021 — Apr 2022',
+    note: 'Capstone project',
+    points: [
+      'A motorized wheelchair attachment controlled by an EMG headset parsing facial expressions, to improve mobility and independence for people with quadriplegia.',
+    ],
+  },
+];
+
+const education = [
+  {
+    school: 'University of Waterloo',
+    degree: 'BASc Mechatronics Engineering (Honours with Co-op)',
+    dates: 'Sep 2017 — Jun 2022', where: 'Waterloo, ON',
+  },
+];
+
+const skills = [
+  { group: 'Hardware / Embedded', items: ['STM32', 'ESP32', 'Edge ML', 'Embedded Linux', 'RTOS', 'PCIe', 'I²C', 'SPI', 'UART', 'Interrupts', 'DMA'] },
+  { group: 'Software', items: ['C', 'C++', 'CMake', 'Python', 'Kotlin', 'Docker', 'Kubernetes', 'Kafka', 'gRPC', 'Protobuf', 'REST', 'GraphQL', 'PostgreSQL', 'CockroachDB', 'CI/CD pipelines'] },
+  { group: 'Mechanical', items: ['Fusion 360', 'SolidWorks', 'AutoCAD', 'MATLAB/Simulink'] },
+];
+---
+<Base
+  title="Resume — Andrew Mouchantaf"
+  description="Mechatronics engineer: embedded systems, firmware, and distributed software."
+  sheetTitle="Resume / CV" sheet="04/05" rev="C"
+  grid="desk" legend={false}
+>
+  <div class="desk">
+
+    <div class="clutter" aria-hidden="true">
+      <svg class="item ruler" viewBox="0 0 40 300">
+        <rect x="6" y="4" width="28" height="292" rx="3" fill="#d8b878" stroke="#b2904f" stroke-width="1.5"/>
+        <g stroke="#7d6336" stroke-width="1.4" stroke-linecap="round">
+          {Array.from({ length: 19 }).map((_, i) => (
+            <line x1="8" y1={18 + i * 15} x2={i % 2 ? 18 : 24} y2={18 + i * 15} />
+          ))}
+        </g>
+      </svg>
+
+      <svg class="item pencil" viewBox="0 0 28 230">
+        <path d="M14 4 L22 22 H6 Z" fill="#e8d6b0"/>
+        <path d="M14 4 L18 13 H10 Z" fill="#2f2a24"/>
+        <rect x="6" y="22" width="16" height="162" fill="#e3a33a"/>
+        <rect x="6" y="22" width="5" height="162" fill="#c8862a"/>
+        <rect x="6" y="184" width="16" height="12" fill="#b9c2c7"/>
+        <rect x="6" y="196" width="16" height="22" rx="4" fill="#e2817f"/>
+      </svg>
+
+      <svg class="item clips" viewBox="0 0 70 60">
+        <g fill="none" stroke="#9aa3ab" stroke-width="3.2" stroke-linecap="round">
+          <path d="M14 10 v26 a7 7 0 0 0 14 0 V14 a4.5 4.5 0 0 0-9 0 v22"/>
+          <path d="M40 24 v26 a7 7 0 0 0 14 0 V28 a4.5 4.5 0 0 0-9 0 v22" transform="rotate(28 47 38)"/>
+        </g>
+      </svg>
+
+      <svg class="item mug" viewBox="0 0 110 100">
+        <ellipse cx="50" cy="52" rx="42" ry="40" fill="#e9e4da"/>
+        <ellipse cx="50" cy="52" rx="34" ry="32" fill="#cfc7ba"/>
+        <ellipse cx="50" cy="52" rx="29" ry="27" fill="#4b3425"/>
+        <ellipse cx="46" cy="47" rx="9" ry="7" fill="#5d4330" opacity=".7"/>
+        <path d="M90 40 a16 13 0 0 1 0 24" fill="none" stroke="#e9e4da" stroke-width="9" stroke-linecap="round"/>
+      </svg>
+
+      <svg class="item calipers" viewBox="0 0 262 112">
+
+        <rect x="26" y="48" width="208" height="14" rx="2" fill="#ccd2d7" stroke="#98a1a9" stroke-width="2"/>
+        <g stroke="#848d94" stroke-width="1.5" stroke-linecap="round">
+          {Array.from({ length: 16 }).map((_, i) => (
+            <line x1={40 + i * 11} y1="50" x2={40 + i * 11} y2={i % 5 ? 55 : 60} />
+          ))}
+        </g>
+
+        <path d="M26 62 H41 L41 100 L31 100 Z" fill="#ccd2d7" stroke="#98a1a9" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M27 48 H38 L38 26 L31 26 Z" fill="#ccd2d7" stroke="#98a1a9" stroke-width="2" stroke-linejoin="round"/>
+
+        <rect x="120" y="38" width="42" height="34" rx="2" fill="#dde2e6" stroke="#98a1a9" stroke-width="2"/>
+        <path d="M120 72 H134 L134 100 L124 100 Z" fill="#dde2e6" stroke="#98a1a9" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M121 38 H131 L131 26 L124 26 Z" fill="#dde2e6" stroke="#98a1a9" stroke-width="2" stroke-linejoin="round"/>
+        <circle cx="152" cy="55" r="6.5" fill="#aeb6bd" stroke="#7d868d" stroke-width="1.6"/>
+
+        <rect x="234" y="51" width="26" height="6" rx="3" fill="#b6bec4"/>
+      </svg>
+
+      <svg class="item cans" viewBox="0 0 176 158">
+
+        <path d="M30 100 A56 64 0 0 1 146 100" fill="none" stroke="#2c2f34" stroke-width="17" stroke-linecap="round"/>
+        <path d="M32 98 A54 60 0 0 1 144 98" fill="none" stroke="#474d55" stroke-width="6" stroke-linecap="round"/>
+
+        <ellipse cx="28" cy="108" rx="27" ry="29" fill="#2c2f34"/>
+        <ellipse cx="28" cy="108" rx="17" ry="19" fill="#17191c"/>
+        <ellipse cx="24" cy="102" rx="6" ry="7" fill="#454b52" opacity=".55"/>
+        <ellipse cx="148" cy="108" rx="27" ry="29" fill="#2c2f34"/>
+        <ellipse cx="148" cy="108" rx="17" ry="19" fill="#17191c"/>
+        <ellipse cx="144" cy="102" rx="6" ry="7" fill="#454b52" opacity=".55"/>
+
+        <path d="M150 134 q14 26 -12 38 q-28 13 -36 -8" fill="none" stroke="#2c2f34" stroke-width="4.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+
+    <main class="paper">
+
+      <header class="head">
+        <h1>Resume</h1>
+        <a class="dl" href="/resume.pdf" download="Andrew-Mouchantaf-Resume.pdf">Download PDF</a>
+      </header>
+
+      <section aria-labelledby="skills-h">
+        <div class="sheet-head"><h2 id="skills-h">Skills</h2></div>
+        <dl class="skills">
+          {skills.map((s) => (
+            <div>
+              <dt>{s.group}</dt>
+              <dd>{s.items.join(' · ')}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      <section aria-labelledby="exp-h">
+        <div class="sheet-head"><h2 id="exp-h">Experience</h2></div>
+        {experience.map((e) => (
+          <article class="entry">
+            <div class="when">{e.dates}<span>{e.where}</span></div>
+            <div>
+              <h3>{e.role} <span class="org">· {e.org}</span></h3>
+              <ul>{e.points.map((p) => <li>{p}</li>)}</ul>
+            </div>
+          </article>
+        ))}
+      </section>
+
+      <section aria-labelledby="proj-h">
+        <div class="sheet-head"><h2 id="proj-h">Projects</h2></div>
+        {projects.map((p) => (
+          <article class="entry">
+            <div class="when">{p.dates}</div>
+            <div>
+              <h3>{p.name}{p.note && <span class="org"> · {p.note}</span>}</h3>
+              <ul>{p.points.map((d) => <li>{d}</li>)}</ul>
+            </div>
+          </article>
+        ))}
+      </section>
+
+      <section aria-labelledby="edu-h">
+        <div class="sheet-head"><h2 id="edu-h">Education</h2></div>
+        {education.map((e) => (
+          <article class="entry">
+            <div class="when">{e.dates}<span>{e.where}</span></div>
+            <div>
+              <h3>{e.school}</h3>
+              <p>{e.degree}</p>
+            </div>
+          </article>
+        ))}
+      </section>
+    </main>
+  </div>
+</Base>
+
+<style>
+  .desk { position: relative; padding: clamp(2rem, 5vh, 4rem) 0 6rem; }
+
+  .clutter { position: absolute; inset: 0; pointer-events: none; }
+  .item { position: absolute; filter: drop-shadow(0 6px 10px rgba(0,0,0,.35)); }
+
+  .clips    { left: 6%;  top: 3rem;  width: 70px;  height: 60px;  transform: rotate(-12deg); }
+  .ruler    { left: 3%;  top: 15rem; width: 40px;  height: 300px; transform: rotate(4deg); }
+  .pencil   { right: 5%; top: 2rem;  width: 28px;  height: 230px; transform: rotate(13deg); }
+  .mug      { right: 4%; top: 20rem; width: 110px; height: 100px; }
+  .calipers { right: 2%; top: 38rem; width: 262px; height: 112px; transform: rotate(-7deg); }
+  .cans     { left: 3%;  top: 36rem; width: 176px; height: 158px; transform: rotate(9deg); }
+
+  .paper {
+    position: relative; z-index: 1;
+    max-width: 52rem; margin: 0 auto;
+    padding: clamp(2rem, 4vw, 3.5rem) clamp(1.5rem, 4vw, 3.5rem) clamp(3rem, 5vw, 4.5rem);
+    background: var(--paper);
+    box-shadow:
+      0 1px 1px rgba(0,0,0,.16),
+      0 10px 24px rgba(0,0,0,.26),
+      0 36px 60px rgba(0,0,0,.22);
+  }
+
+  .sheet-head { display: flex; align-items: center; gap: 1rem; margin: 0 0 1.25rem; }
+  .sheet-head::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+  .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 2rem; flex-wrap: wrap; margin-bottom: 3rem; }
+  h1 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.02em; line-height: 1.1; margin: 0 0 .5rem; }
+  .dl { flex: none; text-decoration: none; font-family: var(--font-mono); font-weight: 500;
+        font-size: .72rem; letter-spacing: .12em; text-transform: uppercase;
+        padding: .6rem 1.1rem; border: 1px solid var(--line); border-radius: 2px;
+        transition: color .15s, border-color .15s; }
+  .dl:hover { color: var(--accent); border-color: var(--accent); }
+
+  section + section { margin-top: 3.5rem; }
+
+  .entry { display: grid; grid-template-columns: minmax(9rem, 11rem) 1fr; gap: 1rem 2rem;
+           padding: 1.5rem 0; border-top: 1px solid var(--line); }
+  .entry:last-child { border-bottom: 1px solid var(--line); }
+  .when { color: var(--muted); font-family: var(--font-mono); font-size: .72rem;
+          letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+  .when span { display: block; margin-top: .3rem; opacity: .8; }
+  h3 { margin: 0 0 .6rem; font-size: 1.15rem; font-weight: 600; }
+  .org { color: var(--muted); font-weight: 400; }
+  .entry ul { margin: 0; padding-left: 1.1rem; color: var(--muted); max-width: 44rem; }
+  .entry li + li { margin-top: .45rem; }
+  .entry p { margin: 0; color: var(--muted); max-width: 44rem; }
+
+  .skills { margin: 0; display: grid; gap: 0; }
+  .skills > div { display: grid; grid-template-columns: minmax(9rem, 11rem) 1fr; gap: 1rem 2rem;
+                  padding: 1rem 0; border-top: 1px solid var(--line); }
+  .skills > div:last-child { border-bottom: 1px solid var(--line); }
+  dt { font-family: var(--font-mono); font-size: .72rem; letter-spacing: .06em;
+       text-transform: uppercase; color: var(--muted); }
+  dd { margin: 0; }
+
+  @media (max-width: 78rem) { .clutter { display: none; } }
+  @media (max-width: 56rem) { .desk { padding: 1.5rem 1rem 4rem; } }
+  @media (max-width: 44rem) {
+    .entry, .skills > div { grid-template-columns: 1fr; gap: .4rem; }
+    .when span { display: inline; margin: 0 0 0 .6rem; }
+  }
+</style>
