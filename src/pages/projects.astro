@@ -1,5 +1,29 @@
 ---
 import Base from '../layouts/Base.astro';
+
+const projects = [
+  {
+    id: 'tcp-connection-analyzer',
+    name: 'TCP Connection Analyzer',
+    short: 'C · Linux packet sockets',
+    tagline: 'A passive TCP/IPv4 connection analyzer for Linux, written from the socket up in C.',
+    dates: 'Jan — Feb 2026',
+    repo: 'https://github.com/andrewmouch/tcp-connection-analyzer',
+    repoLabel: 'github.com/andrewmouch/tcp-connection-analyzer',
+    stack: ['C', 'Linux packet sockets', 'pthreads', 'Make', 'Mongoose', 'cJSON'],
+    points: [
+      'Binds an AF_PACKET socket to a named interface, resolving the interface index and its IPv4 address through ioctl so packet direction can be determined later.',
+      'Parses each frame through a chain of layered parsers — Ethernet, then IPv4, then TCP — with each layer handing its payload to the next and dispatching on the protocol fields it reads.',
+      "Validates IPv4 headers with a one's-complement checksum, exploiting the property that summing the 16-bit words with the checksum included yields zero for a valid header.",
+      'Tracks connection state in a heap hash table keyed on the source and destination IP/port four-tuple, updating each entry from packet direction and TCP flags — the state as observed at the interface, rather than at either endpoint.',
+      'Serves a browser client from an embedded Mongoose HTTP server, with a capture thread feeding a packet queue and parsed packets streamed out as JSON over server-sent events.',
+    ],
+    verify: 'Cross-validated against tcpdump, with debug-level output checked against live traffic.',
+    next: 'IPv6 and UDP parsers, simulated traffic flows with loss and reordering, and published study notes.',
+  },
+];
+
+const num = (i: number) => String(i + 1).padStart(2, '0');
 ---
 <Base
   title="Projects — Andrew Mouchantaf"
@@ -9,10 +33,9 @@ import Base from '../layouts/Base.astro';
   <main>
     <h1>Projects</h1>
 
-    <div class="site">
+    <div class="site" id="locked">
       <svg class="stand" viewBox="0 0 260 200" role="img" aria-label="A construction barricade">
         <defs>
-
           <pattern id="hazard" width="26" height="26" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <rect width="26" height="26" fill="var(--paper)"/>
             <rect width="13" height="26" fill="var(--trace)"/>
@@ -41,6 +64,59 @@ import Base from '../layouts/Base.astro';
 
       <p class="lede">Coming soon</p>
     </div>
+
+    <div class="listing" id="unlocked" hidden>
+      <div class="index" role="tablist" aria-orientation="vertical" aria-label="Project index">
+        {projects.map((p, i) => (
+          <button
+            type="button"
+            role="tab"
+            id={`tab-${p.id}`}
+            class="row"
+            aria-controls={`panel-${p.id}`}
+            aria-selected={i === 0 ? 'true' : 'false'}
+            tabindex={i === 0 ? 0 : -1}
+          >
+            <span class="no">{num(i)}</span>
+            <span class="text">
+              <span class="name">{p.name}</span>
+              <span class="short">{p.short}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <div class="detail">
+        {projects.map((p, i) => (
+          <article
+            role="tabpanel"
+            id={`panel-${p.id}`}
+            aria-labelledby={`tab-${p.id}`}
+            tabindex="0"
+            hidden={i !== 0}
+          >
+            <div class="sheet-head"><h2>{p.name}</h2></div>
+
+            <p class="tagline">{p.tagline}</p>
+
+            <dl class="facts">
+              <div><dt>Dates</dt><dd>{p.dates}</dd></div>
+              <div><dt>Source</dt><dd><a href={p.repo} rel="noopener">{p.repoLabel}</a></dd></div>
+            </dl>
+
+            <ul class="points">
+              {p.points.map((pt) => <li>{pt}</li>)}
+            </ul>
+
+            <dl class="facts stacked">
+              <div><dt>Built with</dt><dd>{p.stack.join(' · ')}</dd></div>
+              <div><dt>Verified by</dt><dd>{p.verify}</dd></div>
+              <div><dt>Next</dt><dd>{p.next}</dd></div>
+            </dl>
+          </article>
+        ))}
+      </div>
+    </div>
   </main>
 </Base>
 
@@ -51,8 +127,146 @@ import Base from '../layouts/Base.astro';
     display: flex; flex-direction: column; align-items: center; text-align: center;
     padding: clamp(2rem, 7vh, 5rem) 0 clamp(3rem, 10vh, 7rem);
   }
+  .site[hidden] { display: none; }
   .stand { width: min(260px, 70vw); height: auto; margin-bottom: 2.5rem; }
 
   .lede { font-family: var(--font-mono); font-size: 1rem; letter-spacing: .08em;
           text-transform: uppercase; color: var(--ink); margin: 0; }
+
+  .listing {
+    padding-top: 2.5rem;
+    display: grid; grid-template-columns: minmax(14rem, 18rem) 1fr; gap: clamp(2rem, 5vw, 4rem);
+    align-items: start;
+  }
+  .listing[hidden] { display: none; }
+
+  .index { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+  .row {
+    display: grid; grid-template-columns: 2.25rem 1fr; gap: .75rem;
+    text-align: left; align-items: baseline;
+    padding: .9rem .75rem .9rem .6rem;
+    background: none; border: 0; border-bottom: 1px solid var(--line);
+    border-left: 2px solid transparent;
+    color: inherit; cursor: pointer; font: inherit;
+    transition: background-color .15s, border-color .15s, color .15s;
+  }
+  .row:hover { background: color-mix(in srgb, var(--paper) 60%, transparent); }
+  .row[aria-selected='true'] {
+    border-left-color: var(--trace);
+    background: color-mix(in srgb, var(--paper) 85%, transparent);
+  }
+  .no {
+    font-family: var(--font-mono); font-size: .7rem; font-weight: 500;
+    letter-spacing: .1em; color: var(--muted);
+  }
+  .row[aria-selected='true'] .no { color: var(--trace); }
+  .text { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+  .name { font-family: var(--font-serif); font-weight: 600; font-size: 1.02rem; line-height: 1.25; }
+  .short {
+    font-family: var(--font-mono); font-size: .66rem; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted);
+  }
+
+  .detail { max-width: 42rem; }
+  .detail [hidden] { display: none; }
+  .detail [role='tabpanel']:focus-visible { outline: 2px solid var(--accent); outline-offset: 6px; }
+
+  .sheet-head { display: flex; align-items: center; gap: 1rem; margin: 0 0 1.25rem; }
+  .sheet-head::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+  .sheet-head h2 { margin: 0; }
+
+  .tagline { margin: 0 0 1.75rem; font-size: 1.05rem; color: var(--muted); }
+
+  .facts { margin: 0 0 2rem; display: grid; gap: .5rem 1.5rem; }
+  .facts > div { display: grid; grid-template-columns: 7.5rem 1fr; gap: 1rem; align-items: baseline; }
+  .facts dt {
+    font-family: var(--font-mono); font-size: .68rem; font-weight: 500;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+  }
+  .facts dd { margin: 0; }
+  .facts.stacked { margin-top: 2rem; margin-bottom: 0; }
+  .facts a {
+    font-family: var(--font-mono); font-size: .92rem;
+    text-decoration-color: var(--trace); text-decoration-thickness: 2px;
+    text-underline-offset: .25em; transition: color .15s, text-decoration-color .15s;
+  }
+  .facts a:hover { color: var(--accent); text-decoration-color: var(--accent); }
+
+  .points { margin: 0; padding-left: 1.1rem; display: grid; gap: .7rem; }
+  .points li { padding-left: .35rem; }
+  .points li::marker { color: var(--trace); }
+
+  @media (max-width: 52rem) {
+    .listing { grid-template-columns: 1fr; gap: 2.5rem; }
+    .detail { max-width: none; }
+  }
+  @media (max-width: 34rem) {
+    .facts > div { grid-template-columns: 1fr; gap: .15rem; }
+  }
 </style>
+
+<script>
+  const UNLOCK = 'andyunlock';
+  const LOCK = 'andylock';
+  const WINDOW = Math.max(UNLOCK.length, LOCK.length);
+  const KEY = 'projects-unlocked';
+  const locked = document.getElementById('locked');
+  const unlocked = document.getElementById('unlocked');
+
+  function setUnlocked(on) {
+    locked.hidden = on;
+    unlocked.hidden = !on;
+    try {
+      if (on) localStorage.setItem(KEY, '1');
+      else localStorage.removeItem(KEY);
+    } catch {}
+  }
+
+  let stored = false;
+  try { stored = localStorage.getItem(KEY) === '1'; } catch {}
+  if (stored) setUnlocked(true);
+
+  let buffer = '';
+  addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    if (t instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+    if (e.key.length !== 1) return;
+
+    buffer = (buffer + e.key.toLowerCase()).slice(-WINDOW);
+    if (buffer.endsWith(UNLOCK)) {
+      buffer = '';
+      setUnlocked(true);
+    } else if (buffer.endsWith(LOCK)) {
+      buffer = '';
+      setUnlocked(false);
+    }
+  });
+
+  const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
+
+  function select(tab, focus = true) {
+    for (const t of tabs) {
+      const on = t === tab;
+      t.setAttribute('aria-selected', String(on));
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+    }
+    if (focus) tab.focus();
+  }
+
+  tabs.forEach((tab) => {
+    tab.addEventListener('click', () => select(tab, false));
+    tab.addEventListener('keydown', (e) => {
+      const i = tabs.indexOf(tab);
+      let next = -1;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') next = (i + 1) % tabs.length;
+      else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') next = (i - 1 + tabs.length) % tabs.length;
+      else if (e.key === 'Home') next = 0;
+      else if (e.key === 'End') next = tabs.length - 1;
+      if (next < 0) return;
+      e.preventDefault();
+      select(tabs[next]);
+    });
+  });
+</script>
